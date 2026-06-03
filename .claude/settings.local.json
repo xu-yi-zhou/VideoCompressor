@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"D:/GitCode/FlutterProject/compress_android/app/src/main/java/com/example/videocompressor/data/model\")",
+      "Bash(mkdir -p \"D:/GitCode/FlutterProject/compress_android/app/src/main/java/com/example/videocompressor/data/repository\")",
+      "Bash(mkdir -p \"D:/GitCode/FlutterProject/compress_android/app/src/main/java/com/example/videocompressor/domain/compressor\")",
+      "Bash(mkdir -p \"D:/GitCode/FlutterProject/compress_android/app/src/main/java/com/example/videocompressor/domain/usecase\")",
+      "Bash(mkdir -p \"D:/GitCode/FlutterProject/compress_android/app/src/main/java/com/example/videocompressor/service\")",
+      "Bash(echo \"ANDROID_HOME=$ANDROID_HOME\")",
+      "Bash(echo \"ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT\")",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(adb install:*)"
+    ]
+  }
+}
