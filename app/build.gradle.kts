@@ -69,4 +69,7 @@ dependencies {
 
     // Gson (JSON serialization for CompressService)
     implementation("com.google.code.gson:gson:2.10.1")
+
+    // OkHttp（电脑端转录/烧字幕服务的局域网客户端）
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

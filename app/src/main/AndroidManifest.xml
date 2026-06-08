@@ -13,6 +13,9 @@
     <!-- 防止息屏休眠 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- 上传音频/视频到电脑端转录/烧字幕服务 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- 前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -52,6 +55,12 @@
         <!-- 前台服务：防止后台被 MIUI/HyperOS 杀死 -->
         <service
             android:name=".service.CompressService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <!-- 前台服务：字幕转录 / 烧字幕（上传到电脑端处理） -->
+        <service
+            android:name=".service.TranscribeService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 

@@ -1,0 +1,174 @@
+package com.example.videocompressor.domain.transcribe
+
+import android.util.Log
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * 电脑端转写/烧字幕服务（FastAPI，见 tools/pc-transcribe/server.py）的局域网客户端。
+ *
+ * 两个接口都返回 **NDJSON**（application/x-ndjson，一行一个 JSON）：
+ *  - 进度行：{"stage":"…","progress":0.42}
+ *  - 错误行：{"error":"…"}
+ *  - 结束行：{"done":true, …}
+ *
+ * `/transcribe` 的结束行就是完整结果（srt/vtt/text/chapters/summary）；
+ * `/burn` 的结束行给出 {"video_url":"/download/<token>"}，再 GET 该地址下载成品 mp4。
+ *
+ * 超时给得很长：两小时讲座在电脑端可能要转写几十分钟。
+ */
+@Singleton
+class TranscribeClient @Inject constructor() {
+
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.MINUTES)   // 上传大视频
+        .readTimeout(120, TimeUnit.MINUTES)   // 等电脑端转写/烧录
+        .callTimeout(0, TimeUnit.MILLISECONDS) // 不限制整体时长
+        .build()
+
+    private val gson = Gson()
+
+    /** stage 文案 + 进度（0~1，null 表示不确定）。 */
+    fun interface ProgressListener {
+        fun onProgress(stage: String, progress: Float?)
+    }
+
+    data class Chapter(val timeSec: Double, val title: String)
+
+    data class SummarySection(val startSec: Double, val endSec: Double, val summary: String)
+
+    data class Summary(val overview: String, val sections: List<SummarySection>)
+
+    data class TranscribeResult(
+        val srt: String,
+        val vtt: String?,
+        val text: String?,
+        val chapters: List<Chapter>,
+        val summary: Summary?
+    )
+
+    /** 把 "192.168.1.20:8000" 之类补全成可用的 base url。 */
+    fun normalize(server: String): String {
+        var s = server.trim()
+        if (!s.startsWith("http://", true) && !s.startsWith("https://", true)) {
+            s = "http://$s"
+        }
+        return s.trimEnd('/')
+    }
+
+    /** 上传音频转写，返回字幕/章节/总结。逐行解析 NDJSON 进度。 */
+    fun transcribe(server: String, audio: File, onProgress: ProgressListener): TranscribeResult {
+        val base = normalize(server)
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", audio.name, audio.asRequestBody("audio/mp4".toMediaType()))
+            .build()
+        val request = Request.Builder().url("$base/transcribe").post(body).build()
+
+        client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("电脑服务返回错误：HTTP ${resp.code}")
+            val source = resp.body?.source() ?: throw IOException("电脑服务无响应")
+            var result: TranscribeResult? = null
+            while (true) {
+                val line = source.readUtf8Line() ?: break
+                if (line.isBlank()) continue
+                val obj = parseLine(line) ?: continue
+                when {
+                    obj.has("error") -> throw IOException(obj.get("error").asString)
+                    obj.has("done") -> result = parseTranscribeResult(obj)
+                    obj.has("stage") -> onProgress.onProgress(
+                        obj.get("stage").asString,
+                        obj.takeIf { it.has("progress") }?.get("progress")?.asFloat
+                    )
+                }
+            }
+            return result ?: throw IOException("电脑服务未返回转写结果")
+        }
+    }
+
+    /**
+     * 上传整段视频，电脑端转写并把字幕硬烧进画面+重编码，下载成品到 [downloadTo]。
+     * 转写阶段进度映射到 0~0.8，烧录阶段电脑端再上报到 1.0。
+     */
+    fun burn(server: String, video: File, downloadTo: File, onProgress: ProgressListener): File {
+        val base = normalize(server)
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", video.name, video.asRequestBody("video/mp4".toMediaType()))
+            .build()
+        val request = Request.Builder().url("$base/burn").post(body).build()
+
+        var videoUrl: String? = null
+        client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("电脑服务返回错误：HTTP ${resp.code}")
+            val source = resp.body?.source() ?: throw IOException("电脑服务无响应")
+            while (true) {
+                val line = source.readUtf8Line() ?: break
+                if (line.isBlank()) continue
+                val obj = parseLine(line) ?: continue
+                when {
+                    obj.has("error") -> throw IOException(obj.get("error").asString)
+                    obj.has("done") -> videoUrl = obj.takeIf { it.has("video_url") }?.get("video_url")?.asString
+                    obj.has("stage") -> onProgress.onProgress(
+                        obj.get("stage").asString,
+                        obj.takeIf { it.has("progress") }?.get("progress")?.asFloat
+                    )
+                }
+            }
+        }
+
+        val url = videoUrl ?: throw IOException("电脑服务未返回成品下载地址")
+        onProgress.onProgress("下载成品中…", null)
+        downloadFinished("$base$url", downloadTo)
+        return downloadTo
+    }
+
+    private fun downloadFinished(url: String, dest: File) {
+        val request = Request.Builder().url(url).get().build()
+        client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("下载成品失败：HTTP ${resp.code}")
+            val body = resp.body ?: throw IOException("成品为空")
+            dest.outputStream().use { out -> body.byteStream().copyTo(out) }
+        }
+        Log.d("TranscribeClient", "成品已下载: ${dest.name}, ${dest.length() / 1_000_000}MB")
+    }
+
+    private fun parseLine(line: String): JsonObject? =
+        runCatching { JsonParser.parseString(line).asJsonObject }.getOrNull()
+
+    private fun parseTranscribeResult(obj: JsonObject): TranscribeResult {
+        val chapters = obj.takeIf { it.has("chapters") }?.getAsJsonArray("chapters")?.map {
+            val c = it.asJsonObject
+            Chapter(c.get("time_sec").asDouble, c.get("title").asString)
+        } ?: emptyList()
+
+        val summary = obj.get("summary")?.takeIf { !it.isJsonNull }?.asJsonObject?.let { s ->
+            val sections = s.getAsJsonArray("sections")?.map {
+                val x = it.asJsonObject
+                SummarySection(x.get("start_sec").asDouble, x.get("end_sec").asDouble, x.get("summary").asString)
+            } ?: emptyList()
+            Summary(s.get("overview").asString, sections)
+        }
+
+        fun str(key: String) = obj.get(key)?.takeIf { !it.isJsonNull }?.asString
+        return TranscribeResult(
+            srt = str("srt") ?: "",
+            vtt = str("vtt"),
+            text = str("text"),
+            chapters = chapters,
+            summary = summary
+        )
+    }
+}
