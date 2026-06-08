@@ -3,8 +3,10 @@ package com.example.videocompressor.ui.screen
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -13,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.videocompressor.ui.viewmodel.CompressStatus
 import com.example.videocompressor.ui.viewmodel.CompressViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,11 +36,22 @@ fun ProgressScreen(
         animationSpec = tween(durationMillis = 300)
     )
 
-    // 自动导航
-    when (val status = uiState.status) {
-        is CompressStatus.Done -> onDone(status.outputPath)
-        is CompressStatus.Error -> onError()
-        else -> {}
+    // 自动导航（必须在 LaunchedEffect 中触发，避免 recomposition 期间调用副作用）
+    val status = uiState.status
+    LaunchedEffect(status) {
+        when (status) {
+            is CompressStatus.Done -> onDone(status.outputPath)
+            is CompressStatus.Error -> onError()
+            else -> {}
+        }
+    }
+
+    // 压缩进行中周期性刷新温度状态，体现热节流自适应
+    LaunchedEffect(Unit) {
+        while (true) {
+            viewModel.refreshThermal()
+            delay(2000)
+        }
     }
 
     Scaffold(
@@ -67,7 +81,13 @@ fun ProgressScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             Text(
-                text = "${(animatedProgress * 100).toInt()}%",
+                // 长视频每个百分点对应很长画面内容，用整数会长时间停在 0%；
+                // 进度未满 1% 时显示一位小数，让用户立刻看到进度在动
+                text = run {
+                    val pct = animatedProgress * 100
+                    if (pct > 0f && pct < 10f) String.format("%.1f%%", pct)
+                    else "${pct.toInt()}%"
+                },
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -87,6 +107,38 @@ fun ProgressScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    uiState.deviceProfile?.let { profile ->
+                        Text(
+                            text = buildString {
+                                append(profile.displaySoc)
+                                append("  ·  ")
+                                append(if (profile.selectedMime.endsWith("hevc")) "H.265" else "H.264")
+                                if (profile.supportsConstantQuality) append("  ·  恒定质量")
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    Text(
+                        text = "温度状态：${uiState.thermalLabel}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.videocompressor.app-mergeDebugResources-53:/values-ko/values-ko.xml",
+            "outputFile": "com.example.videocompressor.app-mergeDebugResources-51:/values-ko/values-ko.xml",
             "map": [
                 {
                     "source": "C:\\Users\\xyz\\.gradle\\caches\\9.0.0\\transforms\\f2b63d6c6e1bf8fb8b3f80fc4b5a4581\\transformed\\material3-release\\res\\values-ko\\values-ko.xml",

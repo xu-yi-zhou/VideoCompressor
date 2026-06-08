@@ -4,6 +4,11 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -44,49 +49,90 @@ fun ResultScreen(
 
     val savedPercent = remember(inputSize, outputSize) {
         if (inputSize > 0) {
-            ((1 - outputSize.toDouble() / inputSize) * 100).toInt()
+            ((1 - outputSize.toDouble() / inputSize) * 100).toInt().coerceAtLeast(0)
         } else 0
+    }
+    val ratio = remember(inputSize, outputSize) {
+        if (inputSize > 0) (outputSize.toDouble() / inputSize).coerceIn(0.0, 1.0).toFloat() else 1f
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("压缩完成") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+            CenterAlignedTopAppBar(
+                title = { Text("压缩完成", fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
-        }
+        },
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp),
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "已保存至相册",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // 对比卡片
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("压缩对比", fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    InfoRow("原始大小", formatSize(inputSize))
-                    InfoRow("压缩后大小", formatSize(outputSize))
-                    InfoRow(
-                        "节省空间",
-                        "${formatSize(inputSize - outputSize)} ($savedPercent%)"
+            // 节省空间高亮
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "节省了",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        "$savedPercent%",
+                        style = MaterialTheme.typography.displayMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        "约 ${formatSize(inputSize - outputSize)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 体积对比
+            SectionCard(
+                title = "体积对比",
+                icon = Icons.Default.CheckCircle
+            ) {
+                SizeBar("原始", formatSize(inputSize), 1f, MaterialTheme.colorScheme.outline)
+                Spacer(modifier = Modifier.height(10.dp))
+                SizeBar("压缩后", formatSize(outputSize), ratio, MaterialTheme.colorScheme.primary)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -105,8 +151,13 @@ fun ResultScreen(
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "分享视频"))
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp)
                 ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text("分享")
                 }
 
@@ -115,11 +166,45 @@ fun ResultScreen(
                         viewModel.reset()
                         onNewCompress()
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp)
                 ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text("再压一个")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SizeBar(
+    label: String,
+    sizeText: String,
+    fraction: Float,
+    color: androidx.compose.ui.graphics.Color
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(sizeText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        LinearProgressIndicator(
+            progress = { fraction.coerceIn(0.02f, 1f) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp),
+            color = color,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+        )
     }
 }

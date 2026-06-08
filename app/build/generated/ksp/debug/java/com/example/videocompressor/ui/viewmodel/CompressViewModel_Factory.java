@@ -2,7 +2,10 @@ package com.example.videocompressor.ui.viewmodel;
 
 import android.content.Context;
 import com.example.videocompressor.data.repository.VideoRepository;
+import com.example.videocompressor.domain.compressor.DeviceCodecProfiler;
+import com.example.videocompressor.domain.compressor.ThermalGovernor;
 import com.example.videocompressor.domain.usecase.CompressVideoUseCase;
+import com.example.videocompressor.service.CompressProgressBus;
 import dagger.internal.DaggerGenerated;
 import dagger.internal.Factory;
 import dagger.internal.QualifierMetadata;
@@ -29,28 +32,42 @@ public final class CompressViewModel_Factory implements Factory<CompressViewMode
 
   private final Provider<VideoRepository> repositoryProvider;
 
+  private final Provider<DeviceCodecProfiler> profilerProvider;
+
+  private final Provider<ThermalGovernor> thermalGovernorProvider;
+
+  private final Provider<CompressProgressBus> progressBusProvider;
+
   private final Provider<Context> contextProvider;
 
   public CompressViewModel_Factory(Provider<CompressVideoUseCase> compressUseCaseProvider,
-      Provider<VideoRepository> repositoryProvider, Provider<Context> contextProvider) {
+      Provider<VideoRepository> repositoryProvider, Provider<DeviceCodecProfiler> profilerProvider,
+      Provider<ThermalGovernor> thermalGovernorProvider,
+      Provider<CompressProgressBus> progressBusProvider, Provider<Context> contextProvider) {
     this.compressUseCaseProvider = compressUseCaseProvider;
     this.repositoryProvider = repositoryProvider;
+    this.profilerProvider = profilerProvider;
+    this.thermalGovernorProvider = thermalGovernorProvider;
+    this.progressBusProvider = progressBusProvider;
     this.contextProvider = contextProvider;
   }
 
   @Override
   public CompressViewModel get() {
-    return newInstance(compressUseCaseProvider.get(), repositoryProvider.get(), contextProvider.get());
+    return newInstance(compressUseCaseProvider.get(), repositoryProvider.get(), profilerProvider.get(), thermalGovernorProvider.get(), progressBusProvider.get(), contextProvider.get());
   }
 
   public static CompressViewModel_Factory create(
       Provider<CompressVideoUseCase> compressUseCaseProvider,
-      Provider<VideoRepository> repositoryProvider, Provider<Context> contextProvider) {
-    return new CompressViewModel_Factory(compressUseCaseProvider, repositoryProvider, contextProvider);
+      Provider<VideoRepository> repositoryProvider, Provider<DeviceCodecProfiler> profilerProvider,
+      Provider<ThermalGovernor> thermalGovernorProvider,
+      Provider<CompressProgressBus> progressBusProvider, Provider<Context> contextProvider) {
+    return new CompressViewModel_Factory(compressUseCaseProvider, repositoryProvider, profilerProvider, thermalGovernorProvider, progressBusProvider, contextProvider);
   }
 
   public static CompressViewModel newInstance(CompressVideoUseCase compressUseCase,
-      VideoRepository repository, Context context) {
-    return new CompressViewModel(compressUseCase, repository, context);
+      VideoRepository repository, DeviceCodecProfiler profiler, ThermalGovernor thermalGovernor,
+      CompressProgressBus progressBus, Context context) {
+    return new CompressViewModel(compressUseCase, repository, profiler, thermalGovernor, progressBus, context);
   }
 }

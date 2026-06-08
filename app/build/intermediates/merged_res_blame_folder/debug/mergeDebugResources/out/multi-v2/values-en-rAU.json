@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.videocompressor.app-mergeDebugResources-53:/values-en-rAU/values-en-rAU.xml",
+            "outputFile": "com.example.videocompressor.app-mergeDebugResources-51:/values-en-rAU/values-en-rAU.xml",
             "map": [
                 {
                     "source": "C:\\Users\\xyz\\.gradle\\caches\\9.0.0\\transforms\\eb6a501f3caf25a2f725c88c53c98a5a\\transformed\\ui-release\\res\\values-en-rAU\\values-en-rAU.xml",

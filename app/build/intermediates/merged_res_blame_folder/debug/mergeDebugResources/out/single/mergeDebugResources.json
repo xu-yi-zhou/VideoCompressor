@@ -1,14 +1,18 @@
 [
     {
-        "merged": "com.example.videocompressor.app-debug-55:/mipmap-anydpi-v26_ic_launcher.xml.flat",
-        "source": "com.example.videocompressor.app-main-57:/mipmap-anydpi-v26/ic_launcher.xml"
+        "merged": "com.example.videocompressor.app-debug-53:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.example.videocompressor.app-main-55:/mipmap-anydpi-v26/ic_launcher.xml"
     },
     {
-        "merged": "C:\\Users\\xyz\\.gradle\\daemon\\9.0.0\\com.example.videocompressor.app-debug-55:\\xml_file_paths.xml.flat",
-        "source": "C:\\Users\\xyz\\.gradle\\daemon\\9.0.0\\com.example.videocompressor.app-main-57:\\xml\\file_paths.xml"
+        "merged": "com.example.videocompressor.app-debug-53:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.example.videocompressor.app-main-55:/drawable/ic_launcher_background.xml"
     },
     {
-        "merged": "com.example.videocompressor.app-debug-55:/drawable_ic_launcher_foreground.xml.flat",
-        "source": "com.example.videocompressor.app-main-57:/drawable/ic_launcher_foreground.xml"
+        "merged": "com.example.videocompressor.app-debug-53:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.example.videocompressor.app-main-55:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.example.videocompressor.app-debug-53:/xml_file_paths.xml.flat",
+        "source": "com.example.videocompressor.app-main-55:/xml/file_paths.xml"
     }
 ]

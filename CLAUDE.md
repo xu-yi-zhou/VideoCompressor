@@ -67,6 +67,65 @@ This is the heart of the project. Surface-to-surface MediaCodec transcode:
   `IS_PENDING`, and the temp file deleted. The success Result carries the MediaStore content `Uri` string.
 - A `PARTIAL_WAKE_LOCK` is held for the duration.
 
+### Subtitles / chapters — the "字幕 / 节点" feature (offloaded to a PC)
+
+A **second, parallel pipeline** that has nothing to do with MediaCodec. The phone does *not*
+transcribe locally — it ships the work to a **faster-whisper HTTP server running on your PC** and just
+handles audio extraction, upload, and saving the results. Exposed on `HomeScreen` as the
+`SectionCard("字幕 / 节点")` (`SubtitleSection`), with a "电脑服务地址" field (e.g. `192.168.1.20:8000`)
+and two buttons:
+
+- **软字幕(SRT)** → `MODE_TRANSCRIBE`: extract audio, upload, receive transcript, write **sidecar
+  files** (SRT + chapters + extras), shareable.
+- **烧进视频 (hard subs)** → `MODE_BURN`: upload the **whole video**, the PC burns subtitles in +
+  re-encodes, the phone downloads the finished mp4 and **saves it to the gallery (`Movies/`)**.
+
+Flow and components:
+
+1. `CompressViewModel.startTranscribe()` / `startBurn()` start **`TranscribeService`** (foreground,
+   `dataSync`), passing the video `Uri`, server URL, display name, and mode as Intent extras. The
+   server URL is persisted via `SettingsStore` (`updateServerUrl`).
+2. `TranscribeService` runs the chosen mode on an IO coroutine scope:
+   - transcribe: `AudioExtractor.extractToM4a` → `TranscribeClient.transcribe(server, audio)` (POST
+     multipart to `<base>/transcribe`) → `saveSidecars(...)`.
+   - burn: copy `Uri` to a cache mp4 → `TranscribeClient.burn(...)` (POST multipart to `<base>/burn`,
+     streams the returned mp4 to a temp file) → `insertVideoToGallery(...)`.
+3. `TranscribeClient` (OkHttp) normalizes the URL (prepends `http://`, trims trailing `/`) and uses
+   **very long timeouts** (30 min write, 120 min read, no call timeout) because a 2-hour lecture can
+   take tens of minutes server-side.
+   - **Progress is streamed back via NDJSON** (the server endpoints return
+     `application/x-ndjson`, one JSON object per line). `transcribe`/`burn` read the body line by
+     line (`source().readUtf8Line()`): progress lines are `{"stage":"…","progress":0.42}` (forwarded
+     to `onProgress(stage, progress)`), the **final line** is `{"done":true, …}`, and an error line is
+     `{"error":"…"}`. For `transcribe` the final line *is* the full `TranscribeResponse`
+     (`srt`/`vtt`/`text`/`chapters`/`summary`). For `burn` the final line carries
+     `{"video_url":"/download/<token>"}`; the client then GETs that to download the finished mp4.
+     The server computes transcribe progress from `segment.end / info.duration` (mapped to ~0–0.9),
+     plus markers for LLM correction / chapters / summary; `burn` maps the transcribe phase to 0–0.8
+     and emits a stage marker during the ffmpeg burn.
+4. `saveSidecars` writes `<stem>.srt` to the app's external `Movies/` dir, and opportunistically also
+   `<stem>.vtt`, `<stem>.txt`, `<stem>.chapters.txt`, and `<stem>.summary.txt` (overview + timeline)
+   when those fields are present. All are shareable via the `FileProvider`.
+5. Results flow **back via `TranscribeBus`** (a `@Singleton` in-process `StateFlow`, like
+   `CompressProgressBus` — *not* the broadcast mechanism the compress path uses): events
+   `Running(stage, progress)` / `Done(srtPath, chaptersPath)` / `DoneVideo(videoUri)` / `Error`, which
+   the ViewModel maps to `TranscribeStatus` on `CompressUiState.transcribeStatus`. `Running.progress`
+   is a nullable `Float` (0–1, `null` = indeterminate); `HomeScreen` shows a `LinearProgressIndicator`
+   (determinate when progress is known, else indeterminate) plus a `<pct>%` label.
+
+The **server side IS in this repo** at `tools/pc-transcribe/` (`server.py` = FastAPI endpoints,
+`transcribe.py` = faster-whisper + ffmpeg + optional local-LLM logic). It is a standalone PC service
+(run with `python server.py`, default `0.0.0.0:8000`), not part of the Android build. The app is just
+its LAN client (needs INTERNET + the PC reachable). The streaming endpoints return NDJSON;
+`/burn` additionally exposes `GET /download/{token}` to fetch the finished mp4 (registered in the
+in-memory `_burn_outputs` map, deleted after download). Both `/transcribe` and `/burn` run the heavy
+work on a worker `threading.Thread`, pushing progress/result dicts through a `queue.Queue` that the
+`StreamingResponse` generator drains — this keeps the FastAPI event loop unblocked while streaming.
+
+> Note: the compress path itself has also moved to a `CompressProgressBus` `StateFlow` (the ViewModel
+> collects it), so the "Service → ViewModel via broadcasts" description above may be stale — verify
+> against `CompressViewModel`/`CompressService` before relying on it.
+
 ### Gotchas / things that look wired but aren't
 
 - **`CompressConfig.Encoder`** exposes `AUTO`, `HARDWARE_HEVC`, `FFMPEG_HEVC`, `FFMPEG_H264`, but
@@ -89,7 +148,9 @@ This is the heart of the project. Surface-to-surface MediaCodec transcode:
 
 ## Permissions / manifest notes
 
-`READ_MEDIA_VIDEO` (API 33+) plus legacy storage perms, `WAKE_LOCK`, `FOREGROUND_SERVICE` +
-`FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`. A `FileProvider`
+`READ_MEDIA_VIDEO` (API 33+) plus legacy storage perms, `INTERNET` (for the PC transcribe/burn
+upload), `WAKE_LOCK`, `FOREGROUND_SERVICE` +
+`FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`. Both `CompressService` and `TranscribeService`
+are declared `dataSync` foreground services. A `FileProvider`
 (`${applicationId}.fileprovider`, paths in `res/xml/file_paths.xml`) is declared for sharing output.
 `BatteryOptimizationHelper` exists to prompt users to exempt the app (MIUI/HyperOS background-kill mitigation).

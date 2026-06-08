@@ -4,21 +4,24 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 压缩箭头：两个向内的箭头表示压缩 -->
-    <group
-        android:translateX="54"
-        android:translateY="54">
-        <!-- 左边向内箭头 -->
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M-20,-10 L-20,-25 L-30,-25 L-30,-10 L-40,-10 L-25,5 L-10,-10 Z" />
-        <!-- 右边向内箭头 -->
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M20,-10 L20,-25 L30,-25 L30,-10 L40,-10 L25,5 L10,-10 Z" />
-        <!-- 底部播放三角 -->
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M-12,12 L-12,28 L12,20 Z" />
-    </group>
+    <!-- 上方压缩箭头（向内/向下） -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M39,28 L54,38 L69,28" />
+
+    <!-- 中部播放三角，表示视频 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M47,44 L47,64 L68,54 Z" />
+
+    <!-- 下方压缩箭头（向内/向上） -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M39,80 L54,70 L69,80" />
 </vector>

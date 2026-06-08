@@ -43,7 +43,8 @@
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher"
         android:testOnly="true"
-        android:theme="@style/Theme.VideoCompressor" >
+        android:theme="@style/Theme.VideoCompressor"
+        android:usesCleartextTraffic="true" >
         <activity
             android:name="com.example.videocompressor.ui.MainActivity"
             android:exported="true" >

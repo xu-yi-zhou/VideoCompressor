@@ -9,7 +9,23 @@
       "Bash(echo \"ANDROID_HOME=$ANDROID_HOME\")",
       "Bash(echo \"ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT\")",
       "Bash(./gradlew assembleDebug)",
-      "Bash(adb install:*)"
+      "Bash(adb install:*)",
+      "PowerShell(.\\\\gradlew.bat assembleDebug -q --console=plain 2>&1 | Select-Object -Last 60)",
+      "PowerShell(.\\\\gradlew.bat compileDebugKotlin --console=plain 2>&1 | Select-Object -Last 40; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(.\\\\gradlew.bat assembleDebug --console=plain 2>&1 | Select-Object -Last 50; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(.\\\\gradlew.bat assembleDebug --console=plain 2>&1 | Select-Object -Last 30; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(.\\\\gradlew.bat compileDebugKotlin --console=plain 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(.\\\\gradlew.bat assembleDebug --console=plain 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(.\\\\gradlew.bat assembleDebug --console=plain 2>&1 | Select-Object -Last 18; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(.\\\\gradlew.bat assembleDebug --console=plain 2>&1 | Select-Object -Last 6; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(python -m py_compile tools\\\\pc-transcribe\\\\transcribe.py tools\\\\pc-transcribe\\\\server.py; if \\($?\\) { \"语法检查通过\" })",
+      "PowerShell($adb = \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\"; if \\(-not \\(Test-Path $adb\\)\\) { $adb = \"adb\" }; & $adb devices)",
+      "PowerShell(.\\\\gradlew.bat installDebug --console=plain 2>&1 | Select-Object -Last 15; \"EXIT=$LASTEXITCODE\")",
+      "Bash(adb logcat *)",
+      "PowerShell(.\\\\gradlew.bat installDebug --console=plain 2>&1 | Select-Object -Last 16; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(python -m py_compile tools\\\\pc-transcribe\\\\server.py; if \\($?\\) { \"语法检查通过\" })",
+      "Bash(PYTHONIOENCODING=utf-8 python *)",
+      "Bash(gradlew.bat assembleDebug)"
     ]
   }
 }

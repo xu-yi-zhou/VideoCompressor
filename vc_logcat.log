@@ -1,0 +1,25 @@
+--------- beginning of main
+06-04 00:14:20.019 D/AudioExtractor(30381): 音频抽取完成: 3173555 bytes, 16702 帧
+06-04 00:14:20.021 D/TranscribeClient(30381): 上传到 http://192.168.31.25:8000/transcribe (3173555 bytes)
+06-04 00:14:42.728 D/TranscribeService(30381): 字幕已保存: /storage/emulated/0/Android/data/com.example.videocompressor/files/Movies/video_1780487086055_compressed.srt
+--------- beginning of crash
+06-04 00:25:41.558 E/AndroidRuntime(26763): FATAL EXCEPTION: [com.google.android.gms.chimera.container.intentoperation.GmsIntentOperationChimeraService-Executor] idle
+06-04 00:25:41.558 E/AndroidRuntime(26763): Process: com.google.android.gms, PID: 26763
+06-04 00:25:41.558 E/AndroidRuntime(26763): java.lang.SecurityException: Caller 10111 is not the approved domain verification agent
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3361)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at android.os.Parcel.createException(Parcel.java:3345)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at android.os.Parcel.readException(Parcel.java:3328)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at android.os.Parcel.readException(Parcel.java:3270)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at android.content.pm.verify.domain.IDomainVerificationManager$Stub$Proxy.queryValidVerificationPackageNames(IDomainVerificationManager.java:287)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at android.content.pm.verify.domain.DomainVerificationManager.queryValidVerificationPackageNames(DomainVerificationManager.java:262)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at etex.b(:com.google.android.gms@253830035@25.38.30 (260400-807569344):3)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at com.google.android.gms.statementservice.DomainVerificationModuleInitIntentOperation.b(:com.google.android.gms@253830035@25.38.30 (260400-807569344):74)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at awgk.onHandleIntent(:com.google.android.gms@253830035@25.38.30 (260400-807569344):58)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at com.google.android.chimera.IntentOperation.onHandleIntent(:com.google.android.gms@253830035@25.38.30 (260400-807569344):2)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at awmi.onHandleIntent(:com.google.android.gms@253830035@25.38.30 (260400-807569344):8)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at xky.run(:com.google.android.gms@253830035@25.38.30 (260400-807569344):64)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at xkx.run(:com.google.android.gms@253830035@25.38.30 (260400-807569344):132)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at gfku.run(:com.google.android.gms@253830035@25.38.30 (260400-807569344):21)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1302)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:677)
+06-04 00:25:41.558 E/AndroidRuntime(26763): 	at java.lang.Thread.run(Thread.java:1119)

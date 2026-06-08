@@ -1,11 +1,5 @@
 package com.example.videocompressor.ui
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,55 +10,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.videocompressor.service.CompressService
 import com.example.videocompressor.ui.screen.*
 import com.example.videocompressor.ui.theme.VideoCompressorTheme
 import com.example.videocompressor.ui.viewmodel.CompressStatus
 import com.example.videocompressor.ui.viewmodel.CompressViewModel
-import com.google.gson.Gson
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val viewModel: CompressViewModel by viewModels()
-    private val gson = Gson()
-
-    private val compressReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent == null) return
-            when (intent.action) {
-                CompressService.ACTION_PROGRESS_UPDATE -> {
-                    val progress = intent.getFloatExtra(CompressService.EXTRA_PROGRESS, 0f)
-                    viewModel.onProgressUpdate(progress)
-                }
-                CompressService.ACTION_COMPRESS_COMPLETE -> {
-                    val path = intent.getStringExtra(CompressService.EXTRA_OUTPUT_PATH) ?: ""
-                    viewModel.onCompressComplete(path)
-                }
-                CompressService.ACTION_COMPRESS_ERROR -> {
-                    val message = intent.getStringExtra(CompressService.EXTRA_ERROR_MESSAGE) ?: "未知错误"
-                    viewModel.onCompressError(message)
-                }
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // 注册广播接收器，接收 CompressService 的进度和结果
-        val filter = IntentFilter().apply {
-            addAction(CompressService.ACTION_PROGRESS_UPDATE)
-            addAction(CompressService.ACTION_COMPRESS_COMPLETE)
-            addAction(CompressService.ACTION_COMPRESS_ERROR)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(compressReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(compressReceiver, filter)
-        }
+        // 进度/结果通过 CompressProgressBus（进程内共享 Flow）回传，ViewModel 已在 init 中订阅，
+        // 不再需要广播接收器。
 
         setContent {
             VideoCompressorTheme {
@@ -86,7 +48,7 @@ class MainActivity : ComponentActivity() {
                     composable("progress") {
                         ProgressScreen(
                             viewModel = viewModel,
-                            onDone = { path ->
+                            onDone = {
                                 navController.navigate("result") {
                                     popUpTo("home") { inclusive = true }
                                 }
@@ -124,23 +86,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
-    }
-
-    override fun onDestroy() {
-        unregisterReceiver(compressReceiver)
-        super.onDestroy()
-    }
-
-    private fun startCompressService(videoUri: Uri, configJson: String) {
-        val intent = Intent(this, CompressService::class.java).apply {
-            putExtra("video_uri", videoUri)
-            putExtra("config", configJson)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
         }
     }
 }

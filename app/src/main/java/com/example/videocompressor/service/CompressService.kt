@@ -25,6 +25,7 @@ import javax.inject.Inject
 class CompressService : Service() {
 
     @Inject lateinit var compressUseCase: CompressVideoUseCase
+    @Inject lateinit var progressBus: CompressProgressBus
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val gson = Gson()
@@ -74,26 +75,18 @@ class CompressService : Service() {
                     getSystemService(NotificationManager::class.java)
                         .notify(NOTIFICATION_ID, notif)
 
-                    val progressIntent = Intent(ACTION_PROGRESS_UPDATE).apply {
-                        putExtra(EXTRA_PROGRESS, progress)
-                    }
-                    sendBroadcast(progressIntent)
+                    // 通过进程内共享总线回传进度（替代不可靠的广播）
+                    progressBus.progress(progress)
                 }
             )
 
             result.fold(
                 onSuccess = { path ->
-                    val doneIntent = Intent(ACTION_COMPRESS_COMPLETE).apply {
-                        putExtra(EXTRA_OUTPUT_PATH, path)
-                    }
-                    sendBroadcast(doneIntent)
+                    progressBus.complete(path)
                     showDoneNotification(path)
                 },
                 onFailure = { e ->
-                    val errorIntent = Intent(ACTION_COMPRESS_ERROR).apply {
-                        putExtra(EXTRA_ERROR_MESSAGE, e.message)
-                    }
-                    sendBroadcast(errorIntent)
+                    progressBus.error(e.message ?: "未知错误")
                     showErrorNotification(e.message ?: "未知错误")
                 }
             )

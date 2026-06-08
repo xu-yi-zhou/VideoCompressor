@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.videocompressor.app-mergeDebugResources-53:/values-v21/values-v21.xml",
+            "outputFile": "com.example.videocompressor.app-mergeDebugResources-51:/values-v21/values-v21.xml",
             "map": [
                 {
                     "source": "C:\\Users\\xyz\\.gradle\\caches\\9.0.0\\transforms\\c65541f61ce3798f5cb3aff067a90aea\\transformed\\core-1.13.1\\res\\values-v21\\values-v21.xml",

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 蓝→青 斜向渐变底色，呼应主题主色/辅色 -->
+    <path android:pathData="M0,0 h108 v108 h-108 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="6" android:startY="6"
+                android:endX="102" android:endY="102">
+                <item android:offset="0" android:color="#FF1E88E5" />
+                <item android:offset="1" android:color="#FF00ACC1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

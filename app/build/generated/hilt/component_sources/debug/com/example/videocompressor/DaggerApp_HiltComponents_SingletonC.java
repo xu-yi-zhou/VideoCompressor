@@ -8,10 +8,15 @@ import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModel;
 import com.example.videocompressor.data.repository.VideoRepository;
 import com.example.videocompressor.di.AppModule_ProvideCompressVideoUseCaseFactory;
+import com.example.videocompressor.di.AppModule_ProvideDeviceCodecProfilerFactory;
+import com.example.videocompressor.di.AppModule_ProvideThermalGovernorFactory;
 import com.example.videocompressor.di.AppModule_ProvideVideoCompressorFactory;
 import com.example.videocompressor.di.AppModule_ProvideVideoRepositoryFactory;
+import com.example.videocompressor.domain.compressor.DeviceCodecProfiler;
+import com.example.videocompressor.domain.compressor.ThermalGovernor;
 import com.example.videocompressor.domain.compressor.VideoCompressor;
 import com.example.videocompressor.domain.usecase.CompressVideoUseCase;
+import com.example.videocompressor.service.CompressProgressBus;
 import com.example.videocompressor.service.CompressService;
 import com.example.videocompressor.service.CompressService_MembersInjector;
 import com.example.videocompressor.ui.MainActivity;
@@ -468,7 +473,7 @@ public final class DaggerApp_HiltComponents_SingletonC {
       public T get() {
         switch (id) {
           case 0: // com.example.videocompressor.ui.viewmodel.CompressViewModel 
-          return (T) new CompressViewModel(singletonCImpl.provideCompressVideoUseCaseProvider.get(), singletonCImpl.provideVideoRepositoryProvider.get(), ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+          return (T) new CompressViewModel(singletonCImpl.provideCompressVideoUseCaseProvider.get(), singletonCImpl.provideVideoRepositoryProvider.get(), singletonCImpl.provideDeviceCodecProfilerProvider.get(), singletonCImpl.provideThermalGovernorProvider.get(), singletonCImpl.compressProgressBusProvider.get(), ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           default: throw new AssertionError(id);
         }
@@ -551,6 +556,7 @@ public final class DaggerApp_HiltComponents_SingletonC {
 
     private CompressService injectCompressService2(CompressService instance) {
       CompressService_MembersInjector.injectCompressUseCase(instance, singletonCImpl.provideCompressVideoUseCaseProvider.get());
+      CompressService_MembersInjector.injectProgressBus(instance, singletonCImpl.compressProgressBusProvider.get());
       return instance;
     }
   }
@@ -560,11 +566,17 @@ public final class DaggerApp_HiltComponents_SingletonC {
 
     private final SingletonCImpl singletonCImpl = this;
 
+    private Provider<DeviceCodecProfiler> provideDeviceCodecProfilerProvider;
+
+    private Provider<ThermalGovernor> provideThermalGovernorProvider;
+
     private Provider<VideoCompressor> provideVideoCompressorProvider;
 
     private Provider<VideoRepository> provideVideoRepositoryProvider;
 
     private Provider<CompressVideoUseCase> provideCompressVideoUseCaseProvider;
+
+    private Provider<CompressProgressBus> compressProgressBusProvider;
 
     private SingletonCImpl(ApplicationContextModule applicationContextModuleParam) {
       this.applicationContextModule = applicationContextModuleParam;
@@ -574,9 +586,12 @@ public final class DaggerApp_HiltComponents_SingletonC {
 
     @SuppressWarnings("unchecked")
     private void initialize(final ApplicationContextModule applicationContextModuleParam) {
+      this.provideDeviceCodecProfilerProvider = DoubleCheck.provider(new SwitchingProvider<DeviceCodecProfiler>(singletonCImpl, 2));
+      this.provideThermalGovernorProvider = DoubleCheck.provider(new SwitchingProvider<ThermalGovernor>(singletonCImpl, 3));
       this.provideVideoCompressorProvider = DoubleCheck.provider(new SwitchingProvider<VideoCompressor>(singletonCImpl, 1));
-      this.provideVideoRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<VideoRepository>(singletonCImpl, 2));
+      this.provideVideoRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<VideoRepository>(singletonCImpl, 4));
       this.provideCompressVideoUseCaseProvider = DoubleCheck.provider(new SwitchingProvider<CompressVideoUseCase>(singletonCImpl, 0));
+      this.compressProgressBusProvider = DoubleCheck.provider(new SwitchingProvider<CompressProgressBus>(singletonCImpl, 5));
     }
 
     @Override
@@ -616,10 +631,19 @@ public final class DaggerApp_HiltComponents_SingletonC {
           return (T) AppModule_ProvideCompressVideoUseCaseFactory.provideCompressVideoUseCase(singletonCImpl.provideVideoCompressorProvider.get(), singletonCImpl.provideVideoRepositoryProvider.get());
 
           case 1: // com.example.videocompressor.domain.compressor.VideoCompressor 
-          return (T) AppModule_ProvideVideoCompressorFactory.provideVideoCompressor();
+          return (T) AppModule_ProvideVideoCompressorFactory.provideVideoCompressor(singletonCImpl.provideDeviceCodecProfilerProvider.get(), singletonCImpl.provideThermalGovernorProvider.get());
 
-          case 2: // com.example.videocompressor.data.repository.VideoRepository 
+          case 2: // com.example.videocompressor.domain.compressor.DeviceCodecProfiler 
+          return (T) AppModule_ProvideDeviceCodecProfilerFactory.provideDeviceCodecProfiler();
+
+          case 3: // com.example.videocompressor.domain.compressor.ThermalGovernor 
+          return (T) AppModule_ProvideThermalGovernorFactory.provideThermalGovernor(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 4: // com.example.videocompressor.data.repository.VideoRepository 
           return (T) AppModule_ProvideVideoRepositoryFactory.provideVideoRepository(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 5: // com.example.videocompressor.service.CompressProgressBus 
+          return (T) new CompressProgressBus();
 
           default: throw new AssertionError(id);
         }
