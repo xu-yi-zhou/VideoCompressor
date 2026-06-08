@@ -108,8 +108,37 @@ class TranscribeClient @Inject constructor() {
             .setType(MultipartBody.FORM)
             .addFormDataPart("file", video.name, video.asRequestBody("video/mp4".toMediaType()))
             .build()
-        val request = Request.Builder().url("$base/burn").post(body).build()
+        return executeBurn(base, "$base/burn", body, downloadTo, onProgress)
+    }
 
+    /**
+     * 上传整段视频 + 已逐句校对的 SRT，电脑端**直接硬烧+重编码**（不再转写），下载成品。
+     * 配合 server.py 的 /burn_srt：用户在 App 里确认字幕无误后才导出，所见即所得。
+     */
+    fun burnWithSrt(
+        server: String,
+        video: File,
+        srt: File,
+        downloadTo: File,
+        onProgress: ProgressListener
+    ): File {
+        val base = normalize(server)
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", video.name, video.asRequestBody("video/mp4".toMediaType()))
+            .addFormDataPart("srt", srt.name, srt.asRequestBody("application/x-subrip".toMediaType()))
+            .build()
+        return executeBurn(base, "$base/burn_srt", body, downloadTo, onProgress)
+    }
+
+    private fun executeBurn(
+        base: String,
+        url: String,
+        body: MultipartBody,
+        downloadTo: File,
+        onProgress: ProgressListener
+    ): File {
+        val request = Request.Builder().url(url).post(body).build()
         var videoUrl: String? = null
         client.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) throw IOException("电脑服务返回错误：HTTP ${resp.code}")
@@ -128,10 +157,9 @@ class TranscribeClient @Inject constructor() {
                 }
             }
         }
-
-        val url = videoUrl ?: throw IOException("电脑服务未返回成品下载地址")
+        val finishedUrl = videoUrl ?: throw IOException("电脑服务未返回成品下载地址")
         onProgress.onProgress("下载成品中…", null)
-        downloadFinished("$base$url", downloadTo)
+        downloadFinished("$base$finishedUrl", downloadTo)
         return downloadTo
     }
 

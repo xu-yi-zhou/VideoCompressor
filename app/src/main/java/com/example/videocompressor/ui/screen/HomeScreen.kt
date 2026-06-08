@@ -15,7 +15,6 @@ import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Movie
-import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.*
@@ -196,20 +195,22 @@ private fun TranscribeTab(
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = { viewModel.startTranscribe() },
-                    enabled = uiState.videoInfo != null && !running,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text("软字幕(SRT)") }
-                Button(
-                    onClick = { viewModel.startBurn() },
-                    enabled = uiState.videoInfo != null && !running,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text("烧进视频") }
+            Button(
+                onClick = { viewModel.startTranscribe() },
+                enabled = uiState.videoInfo != null && !running,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Outlined.Subtitles, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("生成字幕")
             }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                "生成后可逐句校对，确认无误再分享 SRT 或烧进视频。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -259,9 +260,8 @@ private fun TranscribeStatusCard(
             containerColor = MaterialTheme.colorScheme.secondaryContainer
         ) {
             Text(
-                "已保存到应用 Movies 目录：\n${File(status.srtPath).name}" +
-                    (status.chaptersPath?.let { "\n${File(it).name}" } ?: ""),
-                style = MaterialTheme.typography.bodySmall
+                "下一步：逐句校对字幕，确认无误后再分享 SRT 或烧进视频。",
+                style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -271,19 +271,10 @@ private fun TranscribeStatusCard(
                 ) {
                     Icon(Icons.Outlined.Subtitles, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("逐句编辑")
+                    Text("逐句校对并导出")
                 }
-                OutlinedButton(
-                    onClick = { shareFile(context, File(status.srtPath)) },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("分享")
-                }
+                OutlinedButton(onClick = onReset, shape = RoundedCornerShape(12.dp)) { Text("完成") }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            TextButton(onClick = onReset) { Text("完成") }
         }
 
         is TranscribeStatus.DoneVideo -> SectionCard(
@@ -319,7 +310,7 @@ private fun FileInfoCard(info: com.example.videocompressor.data.model.VideoInfo)
     }
 }
 
-private fun shareFile(context: android.content.Context, file: File) {
+internal fun shareFile(context: android.content.Context, file: File) {
     if (!file.exists()) return
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     val intent = Intent(Intent.ACTION_SEND).apply {

@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -153,13 +154,10 @@ class CompressViewModel @Inject constructor(
         _uiState.update { it.copy(serverUrl = url) }
     }
 
-    /** 软字幕(SRT)：抽音频上传电脑端转写，写旁挂文件。 */
+    /** 软字幕(SRT)：抽音频上传电脑端转写，写旁挂文件。生成后由用户逐句校对再导出。 */
     fun startTranscribe() = startTranscribeService(TranscribeService.MODE_TRANSCRIBE)
 
-    /** 烧进视频：上传整段视频，电脑端烧字幕+重编码后保存到相册。 */
-    fun startBurn() = startTranscribeService(TranscribeService.MODE_BURN)
-
-    private fun startTranscribeService(mode: String) {
+    private fun startTranscribeService(mode: String, srtPath: String? = null) {
         val videoInfo = _uiState.value.videoInfo ?: return
         val server = _uiState.value.serverUrl.trim()
         if (server.isBlank()) {
@@ -175,6 +173,7 @@ class CompressViewModel @Inject constructor(
             putExtra(TranscribeService.EXTRA_SERVER_URL, server)
             putExtra(TranscribeService.EXTRA_DISPLAY_NAME, videoInfo.name)
             putExtra(TranscribeService.EXTRA_MODE, mode)
+            srtPath?.let { putExtra(TranscribeService.EXTRA_SRT_PATH, it) }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
@@ -211,19 +210,42 @@ class CompressViewModel @Inject constructor(
         }
     }
 
-    /** 把编辑后的字幕写回原 SRT 文件。 */
-    fun saveSubtitles() {
+    /** 把编辑后的字幕写回原 SRT 文件；写完后在主线程回调 [then]（用于保存后分享）。 */
+    fun saveSubtitles(then: (() -> Unit)? = null) {
         val edit = _uiState.value.subtitleEdit ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            val ok = runCatching {
-                java.io.File(edit.path).writeText(SrtParser.format(edit.cues))
-            }.isSuccess
+            val ok = writeSrt(edit)
             _uiState.update {
                 val e = it.subtitleEdit ?: return@update it
                 it.copy(subtitleEdit = e.copy(dirty = !ok, savedAt = if (ok) System.currentTimeMillis() else null))
             }
+            if (ok && then != null) withContext(Dispatchers.Main) { then() }
         }
     }
+
+    /** 确认字幕无误后导出：先把编辑结果写回 SRT，再上传视频+该 SRT 让电脑端硬烧。 */
+    fun burnEditedSubtitle() {
+        val edit = _uiState.value.subtitleEdit ?: return
+        val server = _uiState.value.serverUrl.trim()
+        if (server.isBlank()) {
+            _uiState.update { it.copy(transcribeStatus = TranscribeStatus.Error("请先填写电脑服务地址")) }
+            return
+        }
+        transcribeBus.reset()
+        _uiState.update { it.copy(transcribeStatus = TranscribeStatus.Running("保存字幕…", null)) }
+        viewModelScope.launch(Dispatchers.IO) {
+            writeSrt(edit)
+            _uiState.update {
+                val e = it.subtitleEdit ?: return@update it
+                it.copy(subtitleEdit = e.copy(dirty = false, savedAt = System.currentTimeMillis()))
+            }
+            startTranscribeService(TranscribeService.MODE_BURN_SRT, srtPath = edit.path)
+        }
+    }
+
+    private fun writeSrt(edit: SubtitleEditState): Boolean = runCatching {
+        java.io.File(edit.path).writeText(SrtParser.format(edit.cues))
+    }.isSuccess
 }
 
 data class CompressUiState(

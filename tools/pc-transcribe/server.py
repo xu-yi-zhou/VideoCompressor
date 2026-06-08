@@ -277,6 +277,54 @@ async def burn_ep(
     return StreamingResponse(_ndjson_stream(q, (base, srt_path)), media_type="application/x-ndjson")
 
 
+def _run_burn_srt_job(tmp_path, srt_path, out_path, codec, cq, font, fontsize, disclaimer, q):
+    """工作线程：用手机端传来的（已人工逐句校对的）SRT 直接硬烧+重编码，跳过转写。"""
+    try:
+        q.put({"stage": "在电脑烧字幕+压缩中…（视频越长越久）", "progress": 0.1})
+        T.burn_subtitles(tmp_path, srt_path, out_path, codec=codec, cq=cq, font=font,
+                         fontsize=fontsize, disclaimer=disclaimer)
+        token = uuid.uuid4().hex
+        _burn_outputs[token] = out_path
+        q.put({"done": True, "video_url": f"/download/{token}"})
+    except Exception as e:
+        q.put({"error": str(e)})
+        try:
+            os.remove(out_path)
+        except OSError:
+            pass
+    finally:
+        q.put(None)
+
+
+@app.post("/burn_srt")
+async def burn_srt_ep(
+    file: UploadFile = File(...),
+    srt: UploadFile = File(...),
+    codec: str = Form("hevc_nvenc"),
+    cq: int = Form(28),
+    font: str = Form("Microsoft YaHei"),
+    fontsize: int = Form(20),
+    disclaimer: str = Form("字幕由AI生成，可能有错"),
+):
+    """上传视频 + 已校对 SRT → 直接硬烧字幕+重编码（不再转写）。流式回传进度，最后给下载地址。"""
+    suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
+    tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_in.write(await file.read())
+    tmp_in.close()
+    base = tmp_in.name
+    srt_path = base + ".srt"
+    with open(srt_path, "wb") as f:
+        f.write(await srt.read())
+    out_path = base + ".subtitled.mp4"
+    q = queue.Queue()
+    threading.Thread(
+        target=_run_burn_srt_job,
+        args=(base, srt_path, out_path, codec, cq, font, fontsize, disclaimer, q),
+        daemon=True,
+    ).start()
+    return StreamingResponse(_ndjson_stream(q, (base, srt_path)), media_type="application/x-ndjson")
+
+
 @app.get("/download/{token}")
 def download_ep(token: str):
     """取走 /burn 烧好的成品 mp4，下载完成后删除该临时文件。"""

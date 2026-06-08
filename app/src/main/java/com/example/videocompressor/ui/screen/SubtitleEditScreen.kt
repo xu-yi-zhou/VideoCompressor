@@ -10,7 +10,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,7 +26,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.example.videocompressor.domain.transcribe.SrtParser
 import com.example.videocompressor.ui.viewmodel.CompressViewModel
+import com.example.videocompressor.ui.viewmodel.TranscribeStatus
 import kotlinx.coroutines.delay
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +63,11 @@ fun SubtitleEditScreen(
         }
     }
 
+    // 开始烧录时暂停预览，避免成品对话框背后还在播放
+    LaunchedEffect(uiState.transcribeStatus) {
+        if (uiState.transcribeStatus is TranscribeStatus.Running) player.pause()
+    }
+
     val cues = edit?.cues ?: emptyList()
     val activeIndex = remember(positionMs, cues) {
         cues.indexOfLast { it.startMs <= positionMs }.takeIf { it >= 0 && positionMs < cues[it].endMs } ?: -1
@@ -90,6 +99,37 @@ fun SubtitleEditScreen(
                     }
                 }
             )
+        },
+        bottomBar = {
+            if (edit != null) {
+                Surface(tonalElevation = 3.dp) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.saveSubtitles { shareFile(context, File(edit.path)) } },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("分享 SRT")
+                        }
+                        Button(
+                            onClick = { viewModel.burnEditedSubtitle() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Outlined.LocalFireDepartment, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("烧进视频")
+                        }
+                    }
+                }
+            }
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -148,6 +188,52 @@ fun SubtitleEditScreen(
                 item { Spacer(Modifier.height(24.dp)) }
             }
         }
+    }
+
+    // 烧进视频走 TranscribeService，进度/结果经 transcribeStatus 回传，这里用对话框展示
+    BurnExportDialog(uiState.transcribeStatus, onFinish = { viewModel.resetTranscribe() })
+}
+
+@Composable
+private fun BurnExportDialog(status: TranscribeStatus, onFinish: () -> Unit) {
+    when (status) {
+        is TranscribeStatus.Running -> AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = { Text("烧进视频中") },
+            text = {
+                Column {
+                    Text(status.stage)
+                    Spacer(Modifier.height(12.dp))
+                    if (status.progress != null) {
+                        LinearProgressIndicator(
+                            progress = { status.progress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text("${(status.progress * 100).toInt()}%")
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        )
+
+        is TranscribeStatus.DoneVideo -> AlertDialog(
+            onDismissRequest = onFinish,
+            confirmButton = { TextButton(onClick = onFinish) { Text("完成") } },
+            title = { Text("烧字幕完成") },
+            text = { Text("带字幕的视频已保存到相册（Movies）。") }
+        )
+
+        is TranscribeStatus.Error -> AlertDialog(
+            onDismissRequest = onFinish,
+            confirmButton = { TextButton(onClick = onFinish) { Text("知道了") } },
+            title = { Text("导出失败") },
+            text = { Text(status.message) }
+        )
+
+        else -> Unit
     }
 }
 

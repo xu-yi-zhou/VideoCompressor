@@ -46,8 +46,10 @@ class TranscribeService : Service() {
         const val EXTRA_SERVER_URL = "server_url"
         const val EXTRA_DISPLAY_NAME = "display_name"
         const val EXTRA_MODE = "mode"
+        const val EXTRA_SRT_PATH = "srt_path"
         const val MODE_TRANSCRIBE = "transcribe"
         const val MODE_BURN = "burn"
+        const val MODE_BURN_SRT = "burn_srt"
 
         private const val TAG = "TranscribeService"
     }
@@ -57,6 +59,7 @@ class TranscribeService : Service() {
         val server = intent?.getStringExtra(EXTRA_SERVER_URL)?.trim()
         val displayName = intent?.getStringExtra(EXTRA_DISPLAY_NAME) ?: "video_${System.currentTimeMillis()}"
         val mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_TRANSCRIBE
+        val srtPath = intent?.getStringExtra(EXTRA_SRT_PATH)
 
         if (videoUri == null || server.isNullOrBlank()) {
             bus.error("未选择视频或未填写电脑服务地址")
@@ -69,8 +72,11 @@ class TranscribeService : Service() {
 
         serviceScope.launch {
             try {
-                if (mode == MODE_BURN) runBurn(videoUri, server, displayName)
-                else runTranscribe(videoUri, server, displayName)
+                when (mode) {
+                    MODE_BURN -> runBurn(videoUri, server, displayName)
+                    MODE_BURN_SRT -> runBurnWithSrt(videoUri, server, displayName, srtPath)
+                    else -> runTranscribe(videoUri, server, displayName)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "字幕任务失败: ${e.message}", e)
                 bus.error(e.message ?: "未知错误")
@@ -109,6 +115,30 @@ class TranscribeService : Service() {
         val output = File(cacheDir, "burn_out_${System.currentTimeMillis()}.mp4")
         try {
             client.burn(server, input, output) { stage, progress ->
+                bus.running(stage, progress)
+                updateNotification(stage, progress)
+            }
+            val galleryUri = insertVideoToGallery(output, "${stem(displayName)}_subtitled.mp4")
+            bus.doneVideo(galleryUri.toString())
+            showResultNotification("烧字幕完成", "已保存到相册")
+        } finally {
+            input.delete()
+            output.delete()
+        }
+    }
+
+    private fun runBurnWithSrt(videoUri: Uri, server: String, displayName: String, srtPath: String?) {
+        val srtFile = srtPath?.let { File(it) }
+        if (srtFile == null || !srtFile.exists()) {
+            bus.error("找不到字幕文件，无法烧录")
+            return
+        }
+        bus.running("准备上传…", null)
+        updateNotification("准备上传…")
+        val input = copyUriToCache(videoUri)
+        val output = File(cacheDir, "burn_out_${System.currentTimeMillis()}.mp4")
+        try {
+            client.burnWithSrt(server, input, srtFile, output) { stage, progress ->
                 bus.running(stage, progress)
                 updateNotification(stage, progress)
             }
