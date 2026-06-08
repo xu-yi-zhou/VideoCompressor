@@ -50,6 +50,16 @@ def get_model():
 # 字幕里要去掉的标点（中英文都覆盖；不含空白，英文单词间空格单独规范化）
 _PUNCT_RE = re.compile(r"[，。、！？；：“”‘’（）《》【】…—～·,.!?;:()\[\]{}<>\"'\\/|`~]")
 
+# Whisper 中文常见幻听：静音/音乐/噪声段会脑补出训练数据里的 YouTube 字幕残留。
+# 字幕条命中其中任一短语即整条丢弃。可在脚本目录 hallucinations.txt 追加（与此默认表合并）。
+_HALLUCINATION = [
+    "请不吝点赞", "請不吝點贊", "点点栏目", "點點欄目", "明镜与点点", "明鏡與點點",
+    "打赏支持", "打賞", "订阅我的频道", "訂閱", "关注我的频道",
+    "谢谢观看", "謝謝觀看", "谢谢大家观看", "感谢观看", "感谢收看", "謝謝收看",
+    "字幕志愿者", "字幕by", "字幕 by", "中文字幕", "字幕组", "字幕製作",
+    "优优独播剧场", "未经允许不得转载", "本视频由", "请点赞订阅",
+]
+
 
 def clean_cue_text(text: str, fillers) -> str:
     """字幕条文本清洗（参考 E:\\video\\srt\\transcribe.py）：删口头禅 + 去所有标点 + 规范空白。"""
@@ -61,16 +71,22 @@ def clean_cue_text(text: str, fillers) -> str:
     return text
 
 
+def _is_hallucination(text: str) -> bool:
+    """整条命中已知 Whisper 幻听短语则判为幻听（丢弃）。"""
+    bl = _cfg.get("hallucinations") or _HALLUCINATION
+    return any(b and b in text for b in bl)
+
+
 def _clean_cues(cues):
-    """对字幕条逐条清洗，丢弃清洗后为空的条（整条是口头禅/标点的情况）。"""
+    """对字幕条逐条清洗：删口头禅/标点、丢弃清洗后为空的条、丢弃 Whisper 幻听条。"""
     fillers = _cfg.get("fillers") or []
-    if not _cfg.get("strip_punct", True) and not fillers:
-        return cues
+    do_clean = _cfg.get("strip_punct", True) or fillers
     out = []
     for c in cues:
-        t = clean_cue_text(c["text"], fillers)
-        if t:
-            out.append({**c, "text": t})
+        t = clean_cue_text(c["text"], fillers) if do_clean else c["text"]
+        if not t or _is_hallucination(t):
+            continue
+        out.append({**c, "text": t})
     return out
 
 
@@ -186,6 +202,8 @@ def _run_transcribe_job(tmp_path, language, min_chapter_sec, q):
             tmp_path, language,
             on_progress=lambda stage, frac: q.put({"stage": stage, "progress": round(frac, 4)}),
         )
+        # 文字稿/章节也剔除 Whisper 幻听句（静音段脑补的"点赞订阅"之类）
+        segments = [s for s in segments if not _is_hallucination(s["text"])]
         # 章节用句级（带标点）文本，按「时长 + 停顿」启发式切分
         q.put({"stage": "生成章节中…", "progress": 0.96})
         chapters = T.build_chapters_heuristic(segments, min_chapter_sec)
@@ -362,6 +380,8 @@ if __name__ == "__main__":
     # 口语表：一行一个口头禅（如"对吧""那么"），转写后从字幕里删除；默认读脚本目录 fillers.txt
     ap.add_argument("--fillers", default=os.path.join(script_dir, "fillers.txt"),
                     help="口语表 txt（一行一个要删除的口头禅）")
+    ap.add_argument("--hallucinations", default=os.path.join(script_dir, "hallucinations.txt"),
+                    help="幻听黑名单 txt（一行一个短语，与内置默认表合并；命中即丢弃整条字幕）")
     ap.add_argument("--keep-punct", action="store_true",
                     help="保留字幕标点（默认去除所有标点，输出纯文字字幕）")
     ap.add_argument("--no-vad", action="store_true",
@@ -378,18 +398,21 @@ if __name__ == "__main__":
     gloss = T.load_glossary(args.glossary) if os.path.isfile(args.glossary) else []
     fillers = T.load_wordlist(args.fillers) if os.path.isfile(args.fillers) else []
     fillers.sort(key=len, reverse=True)  # 先删长的，避免短词残留（参考 transcribe.py 口语表）
+    extra_halluc = T.load_wordlist(args.hallucinations) if os.path.isfile(args.hallucinations) else []
+    hallucinations = list(dict.fromkeys(_HALLUCINATION + extra_halluc))  # 默认表 + 用户表，去重
     prompt = args.prompt or T.load_prompt(args.prompt_file)  # 命令行 --prompt 优先，否则读 prompt.txt
 
     _cfg.update(
         model=args.model, device=args.device, compute_type=args.compute_type,
         hotwords=" ".join(hw), gloss=gloss, prompt=prompt, vad=not args.no_vad,
-        fillers=fillers, strip_punct=not args.keep_punct,
+        fillers=fillers, strip_punct=not args.keep_punct, hallucinations=hallucinations,
         denoise=not args.no_denoise,
         cue_max_chars=args.cue_max_chars, cue_max_gap=args.cue_max_gap,
     )
     print(f"已加载：热词 {len(hw)} 个（{os.path.basename(args.hotwords)}）、"
           f"术语纠正 {len(gloss)} 条（{os.path.basename(args.glossary)}）、"
-          f"口语词 {len(fillers)} 条（{os.path.basename(args.fillers)}）"
+          f"口语词 {len(fillers)} 条（{os.path.basename(args.fillers)}）、"
+          f"幻听黑名单 {len(hallucinations)} 条"
           + (f"、prompt：{prompt[:20]}…" if prompt else "、无 prompt")
           + f"、字幕标点：{'保留' if args.keep_punct else '去除'}"
           + f"、VAD：{'关' if args.no_vad else '开'}"
