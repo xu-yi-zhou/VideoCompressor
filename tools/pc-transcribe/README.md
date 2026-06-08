@@ -4,7 +4,7 @@
 
 两种用法：
 - **`transcribe.py`** —— 命令行，直接处理本地视频文件（现在就能用，**不需要手机**）。
-- **`server.py`** —— 常驻局域网服务，给手机 App 把音频"递过来"转写（手机端集成是第二步）。
+- **`server.py`** —— 常驻局域网服务，给手机 App 用：转写字幕、按校对后的 SRT 把字幕硬烧进视频。
 
 ---
 
@@ -113,18 +113,49 @@ python transcribe.py "第3讲.mp4" --llm-base-url http://localhost:11434/v1 --ll
 
 ---
 
-## 三、局域网服务（给手机 App 用，第二步）
+## 三、局域网服务（给手机 App 用）
 
 ```powershell
 python server.py            # 默认 large-v3 / cuda，监听 0.0.0.0:8000
 ```
 - 查看本机局域网 IP：`ipconfig`（如 192.168.1.20）。
 - 确认手机与电脑同一 WiFi，且防火墙放行该端口。
-- 手机 App 把抽好的音频 `POST` 到 `http://192.168.1.20:8000/transcribe`，返回 JSON：
-  `{ "srt": "...", "vtt": "...", "text": "...", "chapters": [...], "summary": {...} }`（`summary` 在无大模型时为 `null`）。
-- 服务同样会**自动探测本地大模型**：探测到就对手机端转写也做 LLM 纠错 + LLM 章节（同 `--no-llm` / `--no-llm-correct` / `--no-llm-chapters` 开关）。
+- 手机 App「字幕 / 节点」页的「电脑服务地址」填 `192.168.1.20:8000` 即可。
+- 服务会**自动探测本地大模型**：探测到就对手机端转写也做 LLM 纠错 + LLM 章节（同 `--no-llm` / `--no-llm-correct` / `--no-llm-chapters` 开关）。
 
 健康检查：浏览器打开 `http://192.168.1.20:8000/health` 应返回 `{"ok": true, "llm": "qwen2.5:7b"}`（`llm` 为 null 表示未启用大模型）。
+
+### 接口（App 自动调用，手动调试时参考）
+所有转写/烧录接口都返回 **NDJSON 流**：一行一个 JSON，进度行 `{"stage","progress"}`，最后一行 `{"done":true,...}` 或 `{"error":"..."}`。
+
+| 端点 | 用途 | 入参（multipart） |
+|---|---|---|
+| `POST /transcribe` | 上传音频转写 → 最后一行是完整结果 `{srt,vtt,text,chapters,summary}` | `file`(音频) |
+| `POST /burn` | 上传视频 → 服务端**转写并硬烧字幕** → 末行给 `video_url` | `file`(视频) |
+| `POST /burn_srt` | 上传视频 + **已在 App 里逐句校对的 SRT** → 直接硬烧（**不再转写**）→ 末行给 `video_url` | `file`(视频)、`srt`(字幕) |
+| `GET /download/{token}` | 取走 `/burn`、`/burn_srt` 烧好的成品 mp4（取走即删） | — |
+
+> ⚠️ `/burn` 与 `/burn_srt` 依赖 **ffmpeg 命令行**（不是 Python 包）。`ffmpeg -version` 能跑才行，否则报「未找到 ffmpeg」。
+> App 流程是「生成字幕 → 逐句校对 → 导出」：导出走 `/burn_srt`，烧进画面的就是你校对后的字幕。
+
+### 字幕风格选项（服务端转写）
+默认输出**无标点的纯文字字幕**，并支持删除口头禅，行为参考命令行版 `transcribe.py`：
+
+| 选项 | 默认 | 说明 |
+|---|---|---|
+| `--keep-punct` | 关（即默认去标点） | 加上则**保留**字幕里的中英文标点 |
+| `--fillers fillers.txt` | 读脚本目录 `fillers.txt` | 口语表，一行一个口头禅（如 `那么`/`这个`/`对吧`），转写后从字幕删除；整条被删空则丢弃 |
+| `--no-vad` | 关（即默认开 VAD） | 默认开启静音过滤（`min_silence` 500ms）；孤立短句/停顿多的课可加此项关掉 |
+
+- 只清洗**字幕（srt/vtt）**；`.txt` 文字稿与章节仍保留标点，便于阅读/喂大模型。
+- `fillers.txt` 自带示例（默认全部注释，不删任何词）：取消注释或自行追加后重启即可生效。
+- 转写已固定加 `condition_on_previous_text=False`，抑制长视频的上文累积幻听 / 溢出。
+
+```powershell
+python server.py                 # 默认：去标点 + VAD 开 + 防幻觉
+python server.py --keep-punct    # 保留标点
+python server.py --no-vad        # 关 VAD
+```
 
 ---
 
