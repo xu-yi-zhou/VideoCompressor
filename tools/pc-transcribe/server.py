@@ -4,8 +4,8 @@
 局域网转写服务（电脑端常驻），供手机 App 把音频"递过来"转写。
 
 手机 App 把抽好的音频 POST 到 http://<电脑局域网IP>:8000/transcribe ，
-返回 JSON：{ "srt": "...", "vtt": "...", "text": "...", "chapters": [...], "summary": {...} }。
-App 拿到后写成旁挂文件即可。
+返回流式 NDJSON，末行结果：{ "srt": "...", "vtt": "...", "text": "...", "chapters": [...] }。
+App 拿到后写成旁挂文件即可。章节按「时长 + 停顿」启发式切分（不依赖大模型）。
 
 模型只在启动时加载一次，常驻显存，之后每次请求都很快。
 
@@ -92,7 +92,7 @@ def _vtt_string(segments) -> str:
 def do_transcribe(path, language, on_progress=None):
     """统一转写：套用启动时加载的 hotwords / prompt / glossary，并产出逐词同步的字幕条。
     默认先降噪（压制板书哒哒声）再放宽静音阈值，让开头孤立的 A B C 也能出字幕。
-    on_progress(stage, frac)：可选回调，转写/校对过程中按 0~1 上报进度，供流式接口回传手机。"""
+    on_progress(stage, frac)：可选回调，转写过程中按 0~1 上报进度，供流式接口回传手机。"""
     def emit(stage, frac):
         if on_progress:
             on_progress(stage, max(0.0, min(1.0, frac)))
@@ -131,20 +131,7 @@ def do_transcribe(path, language, on_progress=None):
             max_chars=_cfg.get("cue_max_chars", 13),
             on_progress=seg_cb,
         )
-        # LLM 字幕纠错（探测到本地大模型且未关闭时）：纠正听错术语 / 规范标点，逐条对齐
-        corrected = False
-        if _cfg.get("llm_base") and _cfg.get("llm_model") and _cfg.get("llm_correct", True):
-            try:
-                cues, n_changed = T.correct_cues_llm(
-                    cues, _cfg["llm_base"], _cfg["llm_model"], _cfg.get("llm_key"),
-                    terms=_cfg.get("terms"),
-                    on_progress=lambda d, t: emit("校对字幕中…", 0.9 + 0.05 * (d / t if t else 1)),
-                )
-                corrected = True
-                print(f"LLM 校对字幕，修改 {n_changed} 条")
-            except Exception as e:
-                print(f"LLM 校对失败，保留原字幕：{e}")
-        return segments, cues, info, corrected
+        return segments, cues, info
     finally:
         if denoised_tmp:  # 迭代器已消费完，删掉降噪临时 wav
             try:
@@ -158,7 +145,6 @@ def health():
     return {
         "ok": True,
         "model": _cfg.get("model"),
-        "llm": _cfg.get("llm_model") if _cfg.get("llm_base") else None,
     }
 
 
@@ -182,40 +168,16 @@ def _ndjson_stream(q, cleanup_paths=()):
                 pass
 
 
-def _run_transcribe_job(tmp_path, language, min_chapter_sec, max_chapters, q):
+def _run_transcribe_job(tmp_path, language, min_chapter_sec, q):
     """工作线程：跑完整转写，进度与最终结果都经队列 q 回传给流式响应。"""
     try:
-        segments, cues, info, corrected = do_transcribe(
+        segments, cues, info = do_transcribe(
             tmp_path, language,
             on_progress=lambda stage, frac: q.put({"stage": stage, "progress": round(frac, 4)}),
         )
-        # 校对后以纠错过的字幕条为文本/章节源；否则沿用句级 segments
-        units = cues if corrected else segments
+        # 章节用句级（带标点）文本，按「时长 + 停顿」启发式切分
         q.put({"stage": "生成章节中…", "progress": 0.96})
-        chapters = None
-        if _cfg.get("llm_base") and _cfg.get("llm_model") and _cfg.get("llm_chapters", True):
-            try:
-                chapters = T.build_chapters_llm(units, _cfg["llm_base"], _cfg["llm_model"],
-                                                _cfg.get("llm_key"), max_chapters)
-            except Exception as e:
-                print(f"LLM 章节失败，改用启发式：{e}")
-        if not chapters:
-            chapters = T.build_chapters_heuristic(units, min_chapter_sec)
-        # 课堂总结（仅 LLM）：全课概要 + 几分几秒讲了啥的时间线
-        summ = None
-        if _cfg.get("llm_base") and _cfg.get("llm_model") and _cfg.get("llm_summary", True):
-            q.put({"stage": "生成课堂总结中…", "progress": 0.98})
-            try:
-                s = T.build_summary_llm(units, _cfg["llm_base"], _cfg["llm_model"], _cfg.get("llm_key"))
-                summ = {
-                    "overview": s["overview"],
-                    "sections": [
-                        {"start_sec": round(x["start"], 3), "end_sec": round(x["end"], 3), "summary": x["summary"]}
-                        for x in s["sections"]
-                    ],
-                }
-            except Exception as e:
-                print(f"LLM 总结失败，跳过：{e}")
+        chapters = T.build_chapters_heuristic(segments, min_chapter_sec)
         # 字幕(srt/vtt)做无标点 + 删口头禅清洗；文字稿/章节仍用带标点文本，便于阅读
         clean_cues = _clean_cues(cues)
         q.put({
@@ -224,9 +186,8 @@ def _run_transcribe_job(tmp_path, language, min_chapter_sec, max_chapters, q):
             "duration": info.duration,
             "srt": _srt_string(clean_cues),
             "vtt": _vtt_string(clean_cues),
-            "text": "".join(u["text"].strip() for u in units),
+            "text": "".join(s["text"].strip() for s in segments),
             "chapters": [{"time_sec": round(c["time"], 3), "title": c["title"]} for c in chapters],
-            "summary": summ,
         })
     except Exception as e:
         q.put({"error": str(e)})
@@ -239,7 +200,6 @@ async def transcribe_ep(
     file: UploadFile = File(...),
     language: str = Form("zh"),
     min_chapter_sec: float = Form(300.0),
-    max_chapters: int = Form(20),
 ):
     """流式 NDJSON：每行 {"stage","progress"} 上报进度，最后一行 {"done":true, ...结果}。"""
     # 落临时文件（faster-whisper 用 PyAV/ffmpeg 直接解码，mp4/m4a/wav 都行）
@@ -250,7 +210,7 @@ async def transcribe_ep(
     q = queue.Queue()
     threading.Thread(
         target=_run_transcribe_job,
-        args=(tmp_path, language, min_chapter_sec, max_chapters, q),
+        args=(tmp_path, language, min_chapter_sec, q),
         daemon=True,
     ).start()
     return StreamingResponse(_ndjson_stream(q, (tmp_path,)), media_type="application/x-ndjson")
@@ -260,7 +220,7 @@ def _run_burn_job(tmp_path, srt_path, out_path, language, codec, cq, font, fonts
     """工作线程：转写 → 写 SRT → 硬烧字幕+重编码 → 把成品登记进 _burn_outputs 等手机下载。"""
     try:
         # 转写进度压缩到 0~0.8，留出 0.8~1.0 给烧录+压缩阶段
-        _, cues, _, _ = do_transcribe(
+        _, cues, _ = do_transcribe(
             tmp_path, language,
             on_progress=lambda stage, frac: q.put({"stage": stage, "progress": round(frac * 0.8, 4)}),
         )
@@ -403,15 +363,6 @@ if __name__ == "__main__":
                     help="单条字幕最多字数，超过就断成新条（默认 20，避免长句被播放器折成两行）")
     ap.add_argument("--cue-max-gap", type=float, default=0.6,
                     help="逐词字幕：停顿超过该秒数就断成新条")
-    # 大模型：默认自动探测本地 Ollama/LM Studio，用于章节切分 + 字幕纠错
-    ap.add_argument("--llm-base-url", default=None,
-                    help="OpenAI 兼容地址，如 http://localhost:11434/v1（留空则自动探测本地服务）")
-    ap.add_argument("--llm-model", default=None, help="LLM 模型名，如 qwen2.5:7b（留空且探测到本地服务时自动选用）")
-    ap.add_argument("--llm-key", default=os.environ.get("LLM_API_KEY"), help="LLM 的 API Key（本地 Ollama 可不填）")
-    ap.add_argument("--no-llm", action="store_true", help="完全不使用大模型（章节走启发式、不做纠错）")
-    ap.add_argument("--no-llm-chapters", action="store_true", help="不用 LLM 切章节（章节退回启发式）")
-    ap.add_argument("--no-llm-correct", action="store_true", help="不做 LLM 字幕纠错润色")
-    ap.add_argument("--no-llm-summary", action="store_true", help="不生成 LLM 课堂总结")
     args = ap.parse_args()
 
     hw = T.cap_hotwords(T.load_wordlist(args.hotwords)) if os.path.isfile(args.hotwords) else []
@@ -420,33 +371,13 @@ if __name__ == "__main__":
     fillers.sort(key=len, reverse=True)  # 先删长的，避免短词残留（参考 transcribe.py 口语表）
     prompt = args.prompt or T.load_prompt(args.prompt_file)  # 命令行 --prompt 优先，否则读 prompt.txt
 
-    # 解析 LLM：显式指定优先，否则自动探测本地服务（--no-llm 一票否决）
-    llm_base, llm_model, llm_key = args.llm_base_url, args.llm_model, args.llm_key
-    if not args.no_llm and not (llm_base and llm_model):
-        d_base, d_model = T.detect_local_llm()
-        if d_base:
-            llm_base, llm_model = llm_base or d_base, llm_model or d_model
-    if args.no_llm:
-        llm_base = llm_model = None
-
     _cfg.update(
         model=args.model, device=args.device, compute_type=args.compute_type,
         hotwords=" ".join(hw), gloss=gloss, prompt=prompt, vad=not args.no_vad,
         fillers=fillers, strip_punct=not args.keep_punct,
         denoise=not args.no_denoise, no_speech_threshold=args.no_speech_threshold,
         cue_max_chars=args.cue_max_chars, cue_max_gap=args.cue_max_gap,
-        llm_base=llm_base, llm_model=llm_model, llm_key=llm_key,
-        llm_chapters=not args.no_llm_chapters, llm_correct=not args.no_llm_correct,
-        llm_summary=not args.no_llm_summary,
-        terms=hw + [right for _, right in gloss],
     )
-    if llm_base:
-        llm_uses = [n for n, on in (("章节", not args.no_llm_chapters),
-                                    ("纠错", not args.no_llm_correct),
-                                    ("总结", not args.no_llm_summary)) if on] or ["（均关闭）"]
-        llm_status = f"{llm_model} @ {llm_base}（用于：{'/'.join(llm_uses)}）"
-    else:
-        llm_status = "未启用（未探测到本地服务或 --no-llm）"
     print(f"已加载：热词 {len(hw)} 个（{os.path.basename(args.hotwords)}）、"
           f"术语纠正 {len(gloss)} 条（{os.path.basename(args.glossary)}）、"
           f"口语词 {len(fillers)} 条（{os.path.basename(args.fillers)}）"
@@ -454,7 +385,6 @@ if __name__ == "__main__":
           + f"、字幕标点：{'保留' if args.keep_punct else '去除'}"
           + f"、VAD：{'关' if args.no_vad else '开'}"
           + f"、降噪：{'关' if args.no_denoise else '开'}"
-          + f"、no_speech 阈值：{args.no_speech_threshold}"
-          + f"、大模型：{llm_status}")
+          + f"、no_speech 阈值：{args.no_speech_threshold}")
     get_model()  # 启动即预热
     uvicorn.run(app, host=args.host, port=args.port)

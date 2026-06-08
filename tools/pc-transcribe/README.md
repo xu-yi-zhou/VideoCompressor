@@ -121,16 +121,16 @@ python server.py            # 默认 large-v3 / cuda，监听 0.0.0.0:8000
 - 查看本机局域网 IP：`ipconfig`（如 192.168.1.20）。
 - 确认手机与电脑同一 WiFi，且防火墙放行该端口。
 - 手机 App「字幕 / 节点」页的「电脑服务地址」填 `192.168.1.20:8000` 即可。
-- 服务会**自动探测本地大模型**：探测到就对手机端转写也做 LLM 纠错 + LLM 章节（同 `--no-llm` / `--no-llm-correct` / `--no-llm-chapters` 开关）。
+- 章节按「时长 + 停顿」启发式切分；服务端**不使用大模型**（不做 LLM 纠错/章节/总结）。逐句校对在 App 内手动完成。
 
-健康检查：浏览器打开 `http://192.168.1.20:8000/health` 应返回 `{"ok": true, "llm": "qwen2.5:7b"}`（`llm` 为 null 表示未启用大模型）。
+健康检查：浏览器打开 `http://192.168.1.20:8000/health` 应返回 `{"ok": true, "model": "large-v3"}`。
 
 ### 接口（App 自动调用，手动调试时参考）
 所有转写/烧录接口都返回 **NDJSON 流**：一行一个 JSON，进度行 `{"stage","progress"}`，最后一行 `{"done":true,...}` 或 `{"error":"..."}`。
 
 | 端点 | 用途 | 入参（multipart） |
 |---|---|---|
-| `POST /transcribe` | 上传音频转写 → 最后一行是完整结果 `{srt,vtt,text,chapters,summary}` | `file`(音频) |
+| `POST /transcribe` | 上传音频转写 → 最后一行是完整结果 `{srt,vtt,text,chapters}` | `file`(音频) |
 | `POST /burn` | 上传视频 → 服务端**转写并硬烧字幕** → 末行给 `video_url` | `file`(视频) |
 | `POST /burn_srt` | 上传视频 + **已在 App 里逐句校对的 SRT** → 直接硬烧（**不再转写**）→ 末行给 `video_url` | `file`(视频)、`srt`(字幕) |
 | `GET /download/{token}` | 取走 `/burn`、`/burn_srt` 烧好的成品 mp4（取走即删） | — |
