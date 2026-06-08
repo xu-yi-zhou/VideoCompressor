@@ -19,6 +19,7 @@ import argparse
 import io
 import json
 import queue
+import re
 import tempfile
 import threading
 import os
@@ -44,6 +45,33 @@ def get_model():
         print(f"加载模型 {_cfg['model']} ({_cfg['device']}, {_cfg['compute_type']}) ...")
         _model = WhisperModel(_cfg["model"], device=_cfg["device"], compute_type=_cfg["compute_type"])
     return _model
+
+
+# 字幕里要去掉的标点（中英文都覆盖；不含空白，英文单词间空格单独规范化）
+_PUNCT_RE = re.compile(r"[，。、！？；：“”‘’（）《》【】…—～·,.!?;:()\[\]{}<>\"'\\/|`~]")
+
+
+def clean_cue_text(text: str, fillers) -> str:
+    """字幕条文本清洗（参考 E:\\video\\srt\\transcribe.py）：删口头禅 + 去所有标点 + 规范空白。"""
+    for f in fillers or ():
+        if f:
+            text = text.replace(f, "")
+    text = _PUNCT_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _clean_cues(cues):
+    """对字幕条逐条清洗，丢弃清洗后为空的条（整条是口头禅/标点的情况）。"""
+    fillers = _cfg.get("fillers") or []
+    if not _cfg.get("strip_punct", True) and not fillers:
+        return cues
+    out = []
+    for c in cues:
+        t = clean_cue_text(c["text"], fillers)
+        if t:
+            out.append({**c, "text": t})
+    return out
 
 
 def _srt_string(segments) -> str:
@@ -77,9 +105,11 @@ def do_transcribe(path, language, on_progress=None):
         except Exception as e:
             print(f"降噪失败，改用原音频：{e}")
     kwargs = dict(
-        language=language, vad_filter=_cfg.get("vad", False),
+        language=language, vad_filter=_cfg.get("vad", True),
         vad_parameters={"min_silence_duration_ms": 500}, beam_size=5,
         word_timestamps=True,
+        # 阻止上文累积导致的幻听 / max_length 溢出，长视频更稳（参考 E:\video\srt\transcribe.py）
+        condition_on_previous_text=False,
         **T.robust_decode_kwargs(_cfg.get("no_speech_threshold", 0.35)),
     )
     if _cfg.get("prompt"):
@@ -186,12 +216,14 @@ def _run_transcribe_job(tmp_path, language, min_chapter_sec, max_chapters, q):
                 }
             except Exception as e:
                 print(f"LLM 总结失败，跳过：{e}")
+        # 字幕(srt/vtt)做无标点 + 删口头禅清洗；文字稿/章节仍用带标点文本，便于阅读
+        clean_cues = _clean_cues(cues)
         q.put({
             "done": True,
             "language": info.language,
             "duration": info.duration,
-            "srt": _srt_string(cues),
-            "vtt": _vtt_string(cues),
+            "srt": _srt_string(clean_cues),
+            "vtt": _vtt_string(clean_cues),
             "text": "".join(u["text"].strip() for u in units),
             "chapters": [{"time_sec": round(c["time"], 3), "title": c["title"]} for c in chapters],
             "summary": summ,
@@ -232,7 +264,7 @@ def _run_burn_job(tmp_path, srt_path, out_path, language, codec, cq, font, fonts
             tmp_path, language,
             on_progress=lambda stage, frac: q.put({"stage": stage, "progress": round(frac * 0.8, 4)}),
         )
-        T.write_srt(cues, srt_path)
+        T.write_srt(_clean_cues(cues), srt_path)
         q.put({"stage": "在电脑烧字幕+压缩中…（视频越长越久）", "progress": 0.85})
         T.burn_subtitles(tmp_path, srt_path, out_path, codec=codec, cq=cq, font=font,
                          fontsize=fontsize, disclaimer=disclaimer)
@@ -356,8 +388,13 @@ if __name__ == "__main__":
     ap.add_argument("--prompt", default="", help="提示词；留空则读脚本目录下的 prompt.txt")
     ap.add_argument("--prompt-file", default=os.path.join(script_dir, "prompt.txt"),
                     help="提示词文件，默认 prompt.txt（写明板书会出现 A1/B1/C1 等带下标编号，偏置识别）")
-    ap.add_argument("--vad", action="store_true",
-                    help="开启静音过滤（默认关；讲课中孤立短句/停顿多时关掉更不易漏字）")
+    # 口语表：一行一个口头禅（如"对吧""那么"），转写后从字幕里删除；默认读脚本目录 fillers.txt
+    ap.add_argument("--fillers", default=os.path.join(script_dir, "fillers.txt"),
+                    help="口语表 txt（一行一个要删除的口头禅）")
+    ap.add_argument("--keep-punct", action="store_true",
+                    help="保留字幕标点（默认去除所有标点，输出纯文字字幕）")
+    ap.add_argument("--no-vad", action="store_true",
+                    help="关闭静音过滤（默认开；min_silence 500ms）")
     ap.add_argument("--no-denoise", action="store_true",
                     help="关闭降噪预处理（默认开；压制板书/粉笔哒哒声，救开头孤立的 A B C）")
     ap.add_argument("--no-speech-threshold", type=float, default=0.35,
@@ -379,6 +416,8 @@ if __name__ == "__main__":
 
     hw = T.cap_hotwords(T.load_wordlist(args.hotwords)) if os.path.isfile(args.hotwords) else []
     gloss = T.load_glossary(args.glossary) if os.path.isfile(args.glossary) else []
+    fillers = T.load_wordlist(args.fillers) if os.path.isfile(args.fillers) else []
+    fillers.sort(key=len, reverse=True)  # 先删长的，避免短词残留（参考 transcribe.py 口语表）
     prompt = args.prompt or T.load_prompt(args.prompt_file)  # 命令行 --prompt 优先，否则读 prompt.txt
 
     # 解析 LLM：显式指定优先，否则自动探测本地服务（--no-llm 一票否决）
@@ -392,7 +431,8 @@ if __name__ == "__main__":
 
     _cfg.update(
         model=args.model, device=args.device, compute_type=args.compute_type,
-        hotwords=" ".join(hw), gloss=gloss, prompt=prompt, vad=args.vad,
+        hotwords=" ".join(hw), gloss=gloss, prompt=prompt, vad=not args.no_vad,
+        fillers=fillers, strip_punct=not args.keep_punct,
         denoise=not args.no_denoise, no_speech_threshold=args.no_speech_threshold,
         cue_max_chars=args.cue_max_chars, cue_max_gap=args.cue_max_gap,
         llm_base=llm_base, llm_model=llm_model, llm_key=llm_key,
@@ -408,9 +448,11 @@ if __name__ == "__main__":
     else:
         llm_status = "未启用（未探测到本地服务或 --no-llm）"
     print(f"已加载：热词 {len(hw)} 个（{os.path.basename(args.hotwords)}）、"
-          f"术语纠正 {len(gloss)} 条（{os.path.basename(args.glossary)}）"
+          f"术语纠正 {len(gloss)} 条（{os.path.basename(args.glossary)}）、"
+          f"口语词 {len(fillers)} 条（{os.path.basename(args.fillers)}）"
           + (f"、prompt：{prompt[:20]}…" if prompt else "、无 prompt")
-          + f"、VAD：{'开' if args.vad else '关'}"
+          + f"、字幕标点：{'保留' if args.keep_punct else '去除'}"
+          + f"、VAD：{'关' if args.no_vad else '开'}"
           + f"、降噪：{'关' if args.no_denoise else '开'}"
           + f"、no_speech 阈值：{args.no_speech_threshold}"
           + f"、大模型：{llm_status}")
