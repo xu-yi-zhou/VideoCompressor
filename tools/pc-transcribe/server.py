@@ -90,9 +90,10 @@ def _vtt_string(segments) -> str:
 
 
 def do_transcribe(path, language, on_progress=None):
-    """统一转写：套用启动时加载的 hotwords / prompt / glossary，并产出逐词同步的字幕条。
-    默认先降噪（压制板书哒哒声）再放宽静音阈值，让开头孤立的 A B C 也能出字幕。
-    on_progress(stage, frac)：可选回调，转写过程中按 0~1 上报进度，供流式接口回传手机。"""
+    """统一转写，采用 E:\\video\\srt\\transcribe.py 的管道：
+      VAD 切静音 + 不累积上文 + 要求带标点 → 词级时间戳 → 按「标点/字数/停顿」切字幕条。
+    套用启动时加载的 hotwords / prompt / glossary（术语纠正）。可选降噪预处理。
+    on_progress(stage, frac)：转写过程按 0~1 上报进度，供流式接口回传手机。"""
     def emit(stage, frac):
         if on_progress:
             on_progress(stage, max(0.0, min(1.0, frac)))
@@ -104,16 +105,15 @@ def do_transcribe(path, language, on_progress=None):
             src = denoised_tmp
         except Exception as e:
             print(f"降噪失败，改用原音频：{e}")
+    # 提示词要求输出标点：build_cues_from_words 依赖句末标点按句切分（无 prompt 时给默认值）
     kwargs = dict(
-        language=language, vad_filter=_cfg.get("vad", True),
-        vad_parameters={"min_silence_duration_ms": 500}, beam_size=5,
+        language=language, beam_size=5,
+        vad_filter=_cfg.get("vad", True),
+        vad_parameters={"min_silence_duration_ms": 500},
         word_timestamps=True,
-        # 阻止上文累积导致的幻听 / max_length 溢出，长视频更稳（参考 E:\video\srt\transcribe.py）
         condition_on_previous_text=False,
-        **T.robust_decode_kwargs(_cfg.get("no_speech_threshold", 0.35)),
+        initial_prompt=_cfg.get("prompt") or "以下是普通话的句子，请输出简体中文并加标点。",
     )
-    if _cfg.get("prompt"):
-        kwargs["initial_prompt"] = _cfg["prompt"]
     if _cfg.get("hotwords"):
         kwargs["hotwords"] = _cfg["hotwords"]
     try:
@@ -122,15 +122,26 @@ def do_transcribe(path, language, on_progress=None):
         except TypeError:
             kwargs.pop("hotwords", None)  # 旧版 faster-whisper 不支持 hotwords
             seg_iter, info = get_model().transcribe(src, **kwargs)
-        # 转写是大头：按当前段落时间 / 总时长，映射到 0~0.9 上报进度
         dur = info.duration or 0
-        seg_cb = (lambda seg: emit("电脑转写中…", (seg.end / dur) * 0.9)) if (on_progress and dur) else None
-        segments, cues = T.collect_segments_and_cues(
-            seg_iter, _cfg.get("gloss") or [],
-            max_gap=_cfg.get("cue_max_gap", 0.6),
-            max_chars=_cfg.get("cue_max_chars", 13),
-            on_progress=seg_cb,
-        )
+        gloss = _cfg.get("gloss") or []
+        # 句级 segments（带标点，供文字稿/章节）+ 词级 words（供按句切字幕）
+        segments, words = [], []
+        for seg in seg_iter:
+            text = T.apply_glossary(seg.text, gloss) if gloss else seg.text
+            segments.append({"start": seg.start, "end": seg.end, "text": text})
+            for w in (getattr(seg, "words", None) or []):
+                words.append({"start": w.start, "end": w.end, "text": w.word})
+            if on_progress and dur:
+                emit("电脑转写中…", (seg.end / dur) * 0.9)
+        # E 管道核心：词级 → 按标点/字数/停顿切条（已去标点）；无词级时退回句级
+        cues = T.build_cues_from_words(
+            words,
+            max_chars=_cfg.get("cue_max_chars", 16),
+            max_gap=_cfg.get("cue_max_gap", 1.0),
+            strip_punct=_cfg.get("strip_punct", True),
+        ) if words else segments
+        if gloss:  # 术语纠正在切条后的整句文本上做，避免被词级切碎漏匹配
+            cues = [{**c, "text": T.apply_glossary(c["text"], gloss)} for c in cues]
         return segments, cues, info
     finally:
         if denoised_tmp:  # 迭代器已消费完，删掉降噪临时 wav
@@ -357,12 +368,10 @@ if __name__ == "__main__":
                     help="关闭静音过滤（默认开；min_silence 500ms）")
     ap.add_argument("--no-denoise", action="store_true",
                     help="关闭降噪预处理（默认开；压制板书/粉笔哒哒声，救开头孤立的 A B C）")
-    ap.add_argument("--no-speech-threshold", type=float, default=0.35,
-                    help="低于此 no_speech 概率才判为静音丢弃，调低更不易漏字（默认 0.35，官方 0.6）")
-    ap.add_argument("--cue-max-chars", type=int, default=20,
-                    help="单条字幕最多字数，超过就断成新条（默认 20，避免长句被播放器折成两行）")
-    ap.add_argument("--cue-max-gap", type=float, default=0.6,
-                    help="逐词字幕：停顿超过该秒数就断成新条")
+    ap.add_argument("--cue-max-chars", type=int, default=16,
+                    help="单条字幕最多字数，超过就断成新条（默认 16，E 管道值）")
+    ap.add_argument("--cue-max-gap", type=float, default=1.0,
+                    help="逐词字幕：停顿超过该秒数就断成新条（默认 1.0，E 管道值）")
     args = ap.parse_args()
 
     hw = T.cap_hotwords(T.load_wordlist(args.hotwords)) if os.path.isfile(args.hotwords) else []
@@ -375,7 +384,7 @@ if __name__ == "__main__":
         model=args.model, device=args.device, compute_type=args.compute_type,
         hotwords=" ".join(hw), gloss=gloss, prompt=prompt, vad=not args.no_vad,
         fillers=fillers, strip_punct=not args.keep_punct,
-        denoise=not args.no_denoise, no_speech_threshold=args.no_speech_threshold,
+        denoise=not args.no_denoise,
         cue_max_chars=args.cue_max_chars, cue_max_gap=args.cue_max_gap,
     )
     print(f"已加载：热词 {len(hw)} 个（{os.path.basename(args.hotwords)}）、"
@@ -385,6 +394,6 @@ if __name__ == "__main__":
           + f"、字幕标点：{'保留' if args.keep_punct else '去除'}"
           + f"、VAD：{'关' if args.no_vad else '开'}"
           + f"、降噪：{'关' if args.no_denoise else '开'}"
-          + f"、no_speech 阈值：{args.no_speech_threshold}")
+          + f"、切句：{args.cue_max_chars}字/{args.cue_max_gap}s（E 管道）")
     get_model()  # 启动即预热
     uvicorn.run(app, host=args.host, port=args.port)

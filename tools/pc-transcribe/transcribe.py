@@ -28,6 +28,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -147,6 +148,52 @@ def cap_hotwords(words, max_chars=100):
             break
         kept.append(w)
     return kept
+
+
+# 句末标点：强制断句；句中停顿标点：到字数后优先在此断（参考 E:\video\srt\transcribe.py）
+_SENT_END = "。！？!?；;…"
+_PAUSE_PUNC = "，,、"
+_CUE_PUNCT_RE = re.compile(r"[，。、！？；：“”‘’（）《》【】…—～·,.!?;:()\[\]{}<>\"'\\/|`~]")
+
+
+def build_cues_from_words(words, max_chars=16, max_gap=1.0, strip_punct=True):
+    """用词级时间戳按「标点 / 字数 / 停顿」切字幕条（参考 E:\\video\\srt\\transcribe.py）。
+    断句条件（满足其一即结束当前条）：
+      1. 当前词以句末标点结尾；
+      2. 与下一词间隔超过 max_gap 秒（明显停顿）；
+      3. 已达 max_chars 且当前是句中停顿标点；
+      4. 超过 max_chars*1.6 硬上限（防极长无标点）。
+    strip_punct=True 时输出去除标点（断句仍依赖标点）。words 形如 {start,end,text}，返回 [{start,end,text}]。"""
+    def emit(s):
+        return _CUE_PUNCT_RE.sub("", s).strip() if strip_punct else s.strip()
+
+    cues = []
+    buf, start = [], None
+    n = len(words)
+    for i, w in enumerate(words):
+        token = w["text"]
+        if start is None:
+            start = w["start"]
+        buf.append(token)
+        cur = "".join(buf)
+        nxt_gap = (words[i + 1]["start"] - w["end"]) if i + 1 < n else 0
+        last_char = token.strip()[-1:] if token.strip() else ""
+        end_here = (
+            last_char in _SENT_END
+            or nxt_gap >= max_gap
+            or (len(cur.strip()) >= max_chars and last_char in _PAUSE_PUNC)
+            or len(cur.strip()) >= max_chars * 1.6
+        )
+        if end_here:
+            text = emit(cur)
+            if text:
+                cues.append({"start": start, "end": w["end"], "text": text})
+            buf, start = [], None
+    if buf:
+        text = emit("".join(buf))
+        if text:
+            cues.append({"start": start, "end": words[-1]["end"], "text": text})
+    return cues
 
 
 def words_to_cues(words, max_gap=0.6, max_chars=16, max_dur=5.0):
