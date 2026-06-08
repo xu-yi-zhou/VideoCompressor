@@ -42,7 +42,18 @@ class MainActivity : ComponentActivity() {
                             viewModel = viewModel,
                             onStartCompress = {
                                 navController.navigate("progress")
+                            },
+                            onEditSubtitle = { srtPath ->
+                                viewModel.loadSubtitles(srtPath)
+                                navController.navigate("subtitle_edit")
                             }
+                        )
+                    }
+                    composable("subtitle_edit") {
+                        SubtitleEditScreen(
+                            viewModel = viewModel,
+                            videoUri = uiState.videoInfo?.uri,
+                            onBack = { navController.popBackStack() }
                         )
                     }
                     composable("progress") {

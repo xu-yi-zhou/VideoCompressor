@@ -72,4 +72,8 @@ dependencies {
 
     // OkHttp（电脑端转录/烧字幕服务的局域网客户端）
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Media3 ExoPlayer（字幕编辑页的逐句播放/预览）
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
 }

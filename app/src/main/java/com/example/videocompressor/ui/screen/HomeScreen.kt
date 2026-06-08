@@ -42,7 +42,8 @@ import java.io.File
 @Composable
 fun HomeScreen(
     viewModel: CompressViewModel,
-    onStartCompress: () -> Unit
+    onStartCompress: () -> Unit,
+    onEditSubtitle: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -89,7 +90,7 @@ fun HomeScreen(
             }
             when (selectedTab) {
                 0 -> CompressTab(uiState, viewModel, pickVideo, onStartCompress)
-                else -> TranscribeTab(uiState, viewModel, pickVideo)
+                else -> TranscribeTab(uiState, viewModel, pickVideo, onEditSubtitle)
             }
         }
     }
@@ -155,7 +156,8 @@ private fun CompressTab(
 private fun TranscribeTab(
     uiState: com.example.videocompressor.ui.viewmodel.CompressUiState,
     viewModel: CompressViewModel,
-    onPickVideo: () -> Unit
+    onPickVideo: () -> Unit,
+    onEditSubtitle: (String) -> Unit
 ) {
     val context = LocalContext.current
     val running = uiState.transcribeStatus is TranscribeStatus.Running
@@ -211,7 +213,12 @@ private fun TranscribeTab(
         }
 
         Spacer(modifier = Modifier.height(12.dp))
-        TranscribeStatusCard(uiState.transcribeStatus, context) { viewModel.resetTranscribe() }
+        TranscribeStatusCard(
+            status = uiState.transcribeStatus,
+            context = context,
+            onReset = { viewModel.resetTranscribe() },
+            onEditSubtitle = onEditSubtitle
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
     }
@@ -221,7 +228,8 @@ private fun TranscribeTab(
 private fun TranscribeStatusCard(
     status: TranscribeStatus,
     context: android.content.Context,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onEditSubtitle: (String) -> Unit
 ) {
     when (status) {
         is TranscribeStatus.Idle -> Unit
@@ -258,15 +266,24 @@ private fun TranscribeStatusCard(
             Spacer(modifier = Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
+                    onClick = { onEditSubtitle(status.srtPath) },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Outlined.Subtitles, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("逐句编辑")
+                }
+                OutlinedButton(
                     onClick = { shareFile(context, File(status.srtPath)) },
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("分享字幕")
+                    Text("分享")
                 }
-                OutlinedButton(onClick = onReset, shape = RoundedCornerShape(12.dp)) { Text("完成") }
             }
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onReset) { Text("完成") }
         }
 
         is TranscribeStatus.DoneVideo -> SectionCard(

@@ -14,6 +14,8 @@ import com.example.videocompressor.data.model.VideoInfo
 import com.example.videocompressor.data.repository.VideoRepository
 import com.example.videocompressor.domain.compressor.DeviceCodecProfiler
 import com.example.videocompressor.domain.compressor.ThermalGovernor
+import com.example.videocompressor.domain.transcribe.SrtParser
+import com.example.videocompressor.domain.transcribe.SubtitleCue
 import com.example.videocompressor.domain.usecase.CompressVideoUseCase
 import com.example.videocompressor.service.CompressProgressBus
 import com.example.videocompressor.service.CompressService
@@ -186,6 +188,42 @@ class CompressViewModel @Inject constructor(
         transcribeBus.reset()
         _uiState.update { it.copy(transcribeStatus = TranscribeStatus.Idle) }
     }
+
+    // ── 字幕逐句编辑 ───────────────────────────────────────
+
+    /** 载入待编辑的 SRT 文件（解析为可编辑的字幕条列表）。 */
+    fun loadSubtitles(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cues = runCatching { SrtParser.parse(java.io.File(path).readText()) }.getOrDefault(emptyList())
+            _uiState.update {
+                it.copy(subtitleEdit = SubtitleEditState(path = path, cues = cues, dirty = false))
+            }
+        }
+    }
+
+    fun updateCueText(index: Int, text: String) {
+        _uiState.update { state ->
+            val edit = state.subtitleEdit ?: return@update state
+            val cues = edit.cues.toMutableList()
+            if (index !in cues.indices) return@update state
+            cues[index] = cues[index].copy(text = text)
+            state.copy(subtitleEdit = edit.copy(cues = cues, dirty = true, savedAt = null))
+        }
+    }
+
+    /** 把编辑后的字幕写回原 SRT 文件。 */
+    fun saveSubtitles() {
+        val edit = _uiState.value.subtitleEdit ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                java.io.File(edit.path).writeText(SrtParser.format(edit.cues))
+            }.isSuccess
+            _uiState.update {
+                val e = it.subtitleEdit ?: return@update it
+                it.copy(subtitleEdit = e.copy(dirty = !ok, savedAt = if (ok) System.currentTimeMillis() else null))
+            }
+        }
+    }
 }
 
 data class CompressUiState(
@@ -195,7 +233,15 @@ data class CompressUiState(
     val deviceProfile: DeviceProfile? = null,
     val thermalLabel: String = "未知",
     val serverUrl: String = "",
-    val transcribeStatus: TranscribeStatus = TranscribeStatus.Idle
+    val transcribeStatus: TranscribeStatus = TranscribeStatus.Idle,
+    val subtitleEdit: SubtitleEditState? = null
+)
+
+data class SubtitleEditState(
+    val path: String,
+    val cues: List<SubtitleCue> = emptyList(),
+    val dirty: Boolean = false,
+    val savedAt: Long? = null
 )
 
 sealed class CompressStatus {
