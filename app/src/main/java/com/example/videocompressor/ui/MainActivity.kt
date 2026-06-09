@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.ui
 
 import android.os.Bundle
@@ -16,6 +22,17 @@ import com.example.videocompressor.ui.viewmodel.CompressStatus
 import com.example.videocompressor.ui.viewmodel.CompressViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
+/**
+ * 应用主界面 Activity，作为 Compose UI 的宿主容器。
+ *
+ * 内部持有 Activity 作用域的 [com.example.videocompressor.ui.viewmodel.CompressViewModel]，
+ * 通过 [androidx.navigation.compose.NavHost] 管理以下四个页面路由：
+ * - `home` — 视频选择与参数配置主页（[com.example.videocompressor.ui.screen.HomeScreen]）
+ * - `progress` — 压缩进度页（[com.example.videocompressor.ui.screen.ProgressScreen]）
+ * - `result` — 压缩完成结果页（[com.example.videocompressor.ui.screen.ResultScreen]）
+ * - `error` — 压缩失败错误页（[com.example.videocompressor.ui.screen.ErrorScreen]）
+ * - `subtitle_edit` — 字幕逐句编辑页（[com.example.videocompressor.ui.screen.SubtitleEditScreen]）
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -24,10 +41,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // 进度/结果通过 CompressProgressBus（进程内共享 Flow）回传，ViewModel 已在 init 中订阅，
-        // 不再需要广播接收器。
-
         setContent {
             VideoCompressorTheme {
                 val navController = rememberNavController()

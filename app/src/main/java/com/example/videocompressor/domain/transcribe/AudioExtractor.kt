@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.domain.transcribe
 
 import android.content.Context
@@ -60,7 +66,6 @@ object AudioExtractor {
                 runCatching { muxer.stop() }
                 muxer.release()
             }
-            Log.d(TAG, "音频抽取完成: ${out.name}, $frames 帧, ${out.length() / 1024}KB")
             return out
         } finally {
             extractor.release()

@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.domain.transcribe
 
 /** 一条字幕：起止时间（毫秒）+ 文本（可多行）。序号在保存时按顺序重排，不存入。 */
@@ -24,7 +30,6 @@ object SrtParser {
         for (block in blocks) {
             val lines = block.split("\n").map { it.trimEnd() }.filter { it.isNotBlank() }
             if (lines.isEmpty()) continue
-            // 时间轴可能在第 1 行（无序号）或第 2 行（有序号）
             val timeIdx = lines.indexOfFirst { TIME_LINE.containsMatchIn(it) }
             if (timeIdx < 0) continue
             val m = TIME_LINE.find(lines[timeIdx]) ?: continue
@@ -51,7 +56,6 @@ object SrtParser {
         val m = g[base + 1].toLong()
         val s = g[base + 2].toLong()
         val msRaw = g[base + 3]
-        // 兼容 1~3 位毫秒
         val ms = msRaw.padEnd(3, '0').take(3).toLong()
         return ((h * 3600 + m * 60 + s) * 1000) + ms
     }
@@ -65,7 +69,6 @@ object SrtParser {
         return "%02d:%02d:%02d,%03d".format(h, m, s, ms)
     }
 
-    /** 列表里给用户看的简短时间 mm:ss。 */
     fun shortTs(totalMs: Long): String {
         val totalSec = totalMs / 1000
         val s = totalSec % 60

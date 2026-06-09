@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.domain.compressor
 
 import android.content.Context
@@ -28,7 +34,6 @@ class ThermalGovernor @Inject constructor(
         context.getSystemService(Context.POWER_SERVICE) as PowerManager
     }
 
-    /** 当前系统热状态。API 29 以下不可读，返回 UNKNOWN。 */
     fun currentLevel(): Level {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return Level.UNKNOWN
         return when (runCatching { pm.currentThermalStatus }.getOrDefault(PowerManager.THERMAL_STATUS_NONE)) {
@@ -43,7 +48,6 @@ class ThermalGovernor @Inject constructor(
         }
     }
 
-    /** 距离触发温控的余量预测(0..1，越小越烫)，API 30+ 才有，否则 null。 */
     fun headroom(): Float? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         return runCatching { pm.getThermalHeadroom(10) }
@@ -51,12 +55,10 @@ class ThermalGovernor @Inject constructor(
             ?.takeIf { !it.isNaN() && it >= 0f }
     }
 
-    /** 高温节流及以上：HEVC 编码负载更高，应降级到更省电的 H.264。 */
     fun shouldDownshiftToAvc(): Boolean = when (currentLevel()) {
         Level.SEVERE, Level.CRITICAL -> true
         else -> false
     }
 
-    /** 严重高温：转码循环应短暂让出，给 SoC 散热窗口。 */
     fun shouldPace(): Boolean = currentLevel() == Level.CRITICAL
 }

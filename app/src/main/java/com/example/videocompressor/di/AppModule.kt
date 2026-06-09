@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.di
 
 import android.content.Context
@@ -14,6 +20,15 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+/**
+ * Hilt 全局依赖注入模块，安装于 [dagger.hilt.components.SingletonComponent]。
+ *
+ * 以单例形式提供应用核心依赖：[com.example.videocompressor.data.repository.VideoRepository]、
+ * [com.example.videocompressor.domain.compressor.VideoCompressor]（实现为 [com.example.videocompressor.domain.compressor.MediaCodecCompressor]）、
+ * [com.example.videocompressor.domain.usecase.CompressVideoUseCase]、
+ * [com.example.videocompressor.domain.compressor.DeviceCodecProfiler] 以及
+ * [com.example.videocompressor.domain.compressor.ThermalGovernor]。
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {

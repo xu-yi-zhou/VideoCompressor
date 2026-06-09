@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.ui.theme
 
 import android.app.Activity
@@ -56,10 +62,16 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = Color(0xFFC2C7CE)
 )
 
+/**
+ * 应用全局主题，基于 Material Design 3。
+ *
+ * Android 12+（API 31+）支持 Material You 动态取色（[dynamicColor] 默认开启），
+ * 颜色跟随系统壁纸主题自动适配；低版本回退到预设的 [LightColorScheme] / [DarkColorScheme]。
+ * 同时处理 edge-to-edge 状态栏图标深浅以匹配当前主题。
+ */
 @Composable
 fun VideoCompressorTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Material You 动态取色（Android 12+），跟随系统壁纸主题
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -76,7 +88,6 @@ fun VideoCompressorTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // 状态栏图标深浅跟随主题，配合 edge-to-edge
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }

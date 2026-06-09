@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.domain.transcribe
 
 import android.util.Log
@@ -40,7 +46,6 @@ class TranscribeClient @Inject constructor() {
 
     private val gson = Gson()
 
-    /** stage 文案 + 进度（0~1，null 表示不确定）。 */
     fun interface ProgressListener {
         fun onProgress(stage: String, progress: Float?)
     }
@@ -59,7 +64,6 @@ class TranscribeClient @Inject constructor() {
         val summary: Summary?
     )
 
-    /** 把 "192.168.1.20:8000" 之类补全成可用的 base url。 */
     fun normalize(server: String): String {
         var s = server.trim()
         if (!s.startsWith("http://", true) && !s.startsWith("https://", true)) {
@@ -68,7 +72,6 @@ class TranscribeClient @Inject constructor() {
         return s.trimEnd('/')
     }
 
-    /** 上传音频转写，返回字幕/章节/总结。逐行解析 NDJSON 进度。 */
     fun transcribe(server: String, audio: File, onProgress: ProgressListener): TranscribeResult {
         val base = normalize(server)
         val body = MultipartBody.Builder()
@@ -170,7 +173,6 @@ class TranscribeClient @Inject constructor() {
             val body = resp.body ?: throw IOException("成品为空")
             dest.outputStream().use { out -> body.byteStream().copyTo(out) }
         }
-        Log.d("TranscribeClient", "成品已下载: ${dest.name}, ${dest.length() / 1_000_000}MB")
     }
 
     private fun parseLine(line: String): JsonObject? =

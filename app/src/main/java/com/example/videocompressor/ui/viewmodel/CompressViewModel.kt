@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.ui.viewmodel
 
 import android.content.Context
@@ -34,6 +40,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+/**
+ * 应用核心 ViewModel，作用域为 Activity，生命周期跨越所有导航页面。
+ *
+ * 持有并暴露 [uiState]（[kotlinx.coroutines.flow.StateFlow]），驱动全部 UI 状态：
+ * - 压缩状态（[CompressStatus]）：Idle / Running / Done / Error
+ * - 字幕转录状态（[TranscribeStatus]）：Idle / Running / Done / DoneVideo / Error
+ * - 设备编码能力画像（[com.example.videocompressor.data.model.DeviceProfile]）
+ * - 字幕逐句编辑状态（[SubtitleEditState]）
+ *
+ * 与后台服务的通信通过进程内总线实现：
+ * - 压缩进度/结果经 [com.example.videocompressor.service.CompressProgressBus] 传入；
+ * - 转录进度/结果经 [com.example.videocompressor.service.TranscribeBus] 传入。
+ */
 @HiltViewModel
 class CompressViewModel @Inject constructor(
     private val compressUseCase: CompressVideoUseCase,
@@ -50,13 +69,11 @@ class CompressViewModel @Inject constructor(
     val uiState: StateFlow<CompressUiState> = _uiState.asStateFlow()
 
     init {
-        // 启动即在后台完成本机编码能力探测，供首页展示
         viewModelScope.launch(Dispatchers.IO) {
             val profile = profiler.profile
             _uiState.update { it.copy(deviceProfile = profile, thermalLabel = thermalGovernor.currentLevel().label) }
         }
 
-        // 监听压缩进度/结果总线（替代广播）
         viewModelScope.launch {
             progressBus.events.collect { event ->
                 when (event) {
@@ -68,7 +85,6 @@ class CompressViewModel @Inject constructor(
             }
         }
 
-        // 监听字幕/转录进度总线
         viewModelScope.launch {
             transcribeBus.events.collect { event ->
                 val status = when (event) {
@@ -83,7 +99,6 @@ class CompressViewModel @Inject constructor(
         }
     }
 
-    /** 供进度页轮询实时温度状态，体现热节流自适应。 */
     fun refreshThermal() {
         _uiState.update { it.copy(thermalLabel = thermalGovernor.currentLevel().label) }
     }
@@ -137,7 +152,6 @@ class CompressViewModel @Inject constructor(
 
     fun reset() {
         progressBus.reset()
-        // 保留已探测的设备画像、电脑服务地址，避免重置后相关卡片/输入消失
         _uiState.update {
             CompressUiState(
                 deviceProfile = it.deviceProfile,
@@ -147,14 +161,11 @@ class CompressViewModel @Inject constructor(
         }
     }
 
-    // ── 字幕 / 节点（电脑端转录）────────────────────────────
-
     fun updateServerUrl(url: String) {
         settingsStore.serverUrl = url
         _uiState.update { it.copy(serverUrl = url) }
     }
 
-    /** 软字幕(SRT)：抽音频上传电脑端转写，写旁挂文件。生成后由用户逐句校对再导出。 */
     fun startTranscribe() = startTranscribeService(TranscribeService.MODE_TRANSCRIBE)
 
     private fun startTranscribeService(mode: String, srtPath: String? = null) {
@@ -190,7 +201,6 @@ class CompressViewModel @Inject constructor(
 
     // ── 字幕逐句编辑 ───────────────────────────────────────
 
-    /** 载入待编辑的 SRT 文件（解析为可编辑的字幕条列表）。 */
     fun loadSubtitles(path: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val cues = runCatching { SrtParser.parse(java.io.File(path).readText()) }.getOrDefault(emptyList())
@@ -210,7 +220,6 @@ class CompressViewModel @Inject constructor(
         }
     }
 
-    /** 把编辑后的字幕写回原 SRT 文件；写完后在主线程回调 [then]（用于保存后分享）。 */
     fun saveSubtitles(then: (() -> Unit)? = null) {
         val edit = _uiState.value.subtitleEdit ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -223,7 +232,6 @@ class CompressViewModel @Inject constructor(
         }
     }
 
-    /** 确认字幕无误后导出：先把编辑结果写回 SRT，再上传视频+该 SRT 让电脑端硬烧。 */
     fun burnEditedSubtitle() {
         val edit = _uiState.value.subtitleEdit ?: return
         val server = _uiState.value.serverUrl.trim()
@@ -275,7 +283,6 @@ sealed class CompressStatus {
 
 sealed class TranscribeStatus {
     data object Idle : TranscribeStatus()
-    /** progress 为 null 表示不确定进度。 */
     data class Running(val stage: String, val progress: Float?) : TranscribeStatus()
     data class Done(val srtPath: String, val chaptersPath: String?) : TranscribeStatus()
     data class DoneVideo(val videoUri: String) : TranscribeStatus()

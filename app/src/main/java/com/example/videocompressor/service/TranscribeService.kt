@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.service
 
 import android.app.Notification
@@ -151,9 +157,6 @@ class TranscribeService : Service() {
         }
     }
 
-    // ── 旁挂文件 ──────────────────────────────────────────
-
-    /** 把转写结果写成旁挂文件，返回 SRT 文件。其余（vtt/txt/章节/总结）尽力而为。 */
     private fun saveSidecars(displayName: String, result: TranscribeClient.TranscribeResult): File {
         val dir = (getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: cacheDir).apply { mkdirs() }
         val stem = stem(displayName)
@@ -185,8 +188,6 @@ class TranscribeService : Service() {
         return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
     }
 
-    // ── 文件 / 相册 ───────────────────────────────────────
-
     private fun copyUriToCache(uri: Uri): File {
         val file = File(cacheDir, "burn_in_${System.currentTimeMillis()}.mp4")
         contentResolver.openInputStream(uri)?.use { input ->
@@ -215,8 +216,6 @@ class TranscribeService : Service() {
         contentResolver.update(uri, values, null, null)
         return uri
     }
-
-    // ── 通知 ─────────────────────────────────────────────
 
     private fun buildNotification(text: String, progress: Float? = null): Notification {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)

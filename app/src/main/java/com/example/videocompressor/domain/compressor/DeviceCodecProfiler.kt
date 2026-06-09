@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.domain.compressor
 
 import android.media.MediaCodecInfo
@@ -22,7 +28,6 @@ class DeviceCodecProfiler @Inject constructor() {
         private const val TAG = "DeviceCodecProfiler"
     }
 
-    /** 全局缓存一次，能力探测对结果是确定的，无需重复枚举。 */
     val profile: DeviceProfile by lazy { buildProfile() }
 
     private data class EncoderCaps(
@@ -45,7 +50,6 @@ class DeviceCodecProfiler @Inject constructor() {
         val hevc = findBestEncoder(MediaFormat.MIMETYPE_VIDEO_HEVC)
         val avc = findBestEncoder(MediaFormat.MIMETYPE_VIDEO_AVC)
 
-        // 默认优先 HEVC（同分辨率体积更小），无 HEVC 时退回 AVC
         val selected = hevc ?: avc
         val selectedMime =
             if (hevc != null) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
@@ -90,10 +94,6 @@ class DeviceCodecProfiler @Inject constructor() {
         ).also { Log.d(TAG, "设备编码画像: $it") }
     }
 
-    /**
-     * 玄戒（Xring）识别：SoC 名直接命中，或在小米品牌下出现 O1 型号。
-     * 由于自研芯片型号字符串尚无公开统一规范，这里做防御式多重匹配。
-     */
     private fun detectXring(socMfr: String, socModel: String, brand: String): Boolean {
         val soc = "$socMfr $socModel".lowercase()
         if (soc.contains("xring") || socModel.contains("玄戒")) return true
@@ -103,7 +103,6 @@ class DeviceCodecProfiler @Inject constructor() {
         return isXiaomi && Regex("\\bo1\\b", RegexOption.IGNORE_CASE).containsMatchIn(socModel)
     }
 
-    /** 枚举某 MIME 的编码器，优先返回首个硬件编码器，否则退回软件编码器。 */
     private fun findBestEncoder(mime: String): EncoderCaps? {
         var softwareFallback: EncoderCaps? = null
         runCatching {

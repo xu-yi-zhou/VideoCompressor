@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.data.repository
 
 import android.content.Context
@@ -10,6 +16,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 视频文件数据仓库，负责以下两项职责：
+ * 1. 从系统 [android.provider.OpenableColumns] 和 [MediaMetadataRetriever] 中提取视频元数据；
+ * 2. 根据原始文件名生成压缩输出文件的本地路径（存放于应用外部 Movies 目录）。
+ *
+ * 通过 Hilt 以单例形式注入，避免多次重复创建 [MediaMetadataRetriever] 开销。
+ */
 @Singleton
 class VideoRepository @Inject constructor(
     @ApplicationContext private val context: Context

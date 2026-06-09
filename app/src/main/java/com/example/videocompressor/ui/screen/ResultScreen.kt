@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.ui.screen
 
 import android.content.Intent
@@ -90,7 +96,6 @@ fun ResultScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 节省空间高亮
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -125,7 +130,6 @@ fun ResultScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 体积对比
             SectionCard(
                 title = "体积对比",
                 icon = Icons.Default.CheckCircle
@@ -137,7 +141,6 @@ fun ResultScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 操作按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)

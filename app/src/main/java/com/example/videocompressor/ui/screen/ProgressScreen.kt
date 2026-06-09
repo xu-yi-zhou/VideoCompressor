@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.ui.screen
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -36,7 +42,6 @@ fun ProgressScreen(
         animationSpec = tween(durationMillis = 300)
     )
 
-    // 自动导航（必须在 LaunchedEffect 中触发，避免 recomposition 期间调用副作用）
     val status = uiState.status
     LaunchedEffect(status) {
         when (status) {
@@ -46,7 +51,6 @@ fun ProgressScreen(
         }
     }
 
-    // 压缩进行中周期性刷新温度状态，体现热节流自适应
     LaunchedEffect(Unit) {
         while (true) {
             viewModel.refreshThermal()
@@ -81,8 +85,6 @@ fun ProgressScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             Text(
-                // 长视频每个百分点对应很长画面内容，用整数会长时间停在 0%；
-                // 进度未满 1% 时显示一位小数，让用户立刻看到进度在动
                 text = run {
                     val pct = animatedProgress * 100
                     if (pct > 0f && pct < 10f) String.format("%.1f%%", pct)

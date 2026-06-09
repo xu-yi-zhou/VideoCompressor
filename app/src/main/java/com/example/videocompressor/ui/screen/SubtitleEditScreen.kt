@@ -1,3 +1,9 @@
+/*
+ * 软件名称：视频压缩工具箱（VideoCompressor）
+ * 版权所有 © 2025 XU Yizhou。保留所有权利。
+ * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
+ * 不得擅自复制、修改、传播或用于商业用途。
+ */
 package com.example.videocompressor.ui.screen
 
 import android.net.Uri
@@ -41,7 +47,6 @@ fun SubtitleEditScreen(
     val edit = uiState.subtitleEdit
     val context = LocalContext.current
 
-    // ExoPlayer 跟随 Composable 生命周期创建/释放
     val player = remember(videoUri) {
         ExoPlayer.Builder(context).build().apply {
             if (videoUri != null) {
@@ -52,7 +57,6 @@ fun SubtitleEditScreen(
     }
     DisposableEffect(player) { onDispose { player.release() } }
 
-    // 轮询播放位置，驱动"当前句"高亮
     var positionMs by remember { mutableLongStateOf(0L) }
     var isPlaying by remember { mutableStateOf(false) }
     LaunchedEffect(player) {
@@ -63,7 +67,6 @@ fun SubtitleEditScreen(
         }
     }
 
-    // 开始烧录时暂停预览，避免成品对话框背后还在播放
     LaunchedEffect(uiState.transcribeStatus) {
         if (uiState.transcribeStatus is TranscribeStatus.Running) player.pause()
     }
@@ -73,7 +76,6 @@ fun SubtitleEditScreen(
         cues.indexOfLast { it.startMs <= positionMs }.takeIf { it >= 0 && positionMs < cues[it].endMs } ?: -1
     }
 
-    // 播放中自动滚动到当前句（编辑时不打扰：仅在播放时滚动）
     val listState = rememberLazyListState()
     LaunchedEffect(activeIndex, isPlaying) {
         if (isPlaying && activeIndex >= 0) {
@@ -190,7 +192,6 @@ fun SubtitleEditScreen(
         }
     }
 
-    // 烧进视频走 TranscribeService，进度/结果经 transcribeStatus 回传，这里用对话框展示
     BurnExportDialog(uiState.transcribeStatus, onFinish = { viewModel.resetTranscribe() })
 }
 
