@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.videocompressor"
+    namespace = "com.xuyizhou.videocompressor"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.videocompressor"
+        applicationId = "com.xuyizhou.videocompressor"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
