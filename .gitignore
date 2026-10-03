@@ -7,3 +7,8 @@ app/build/
 # keystore.properties 为占位模板已跟踪，本机真实值靠 skip-worktree 保护）
 keystore/*.keystore
 keystore/*.jks
+
+# 本机与工具文件
+local.properties
+*.log
+.claude/settings.local.json
