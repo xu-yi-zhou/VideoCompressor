@@ -5,4 +5,4 @@
 # Gson
 -keepattributes Signature
 -keep class com.google.gson.** { *; }
--keep class com.example.videocompressor.data.model.** { *; }
+-keep class com.xuyizhou.videocompressor.data.model.** { *; }
