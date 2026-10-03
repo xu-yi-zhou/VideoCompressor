@@ -1,8 +1,0 @@
-# 电脑端转写依赖
-faster-whisper>=1.0.0
-# 大模型功能（自动探测本地 Ollama/LM Studio、LLM 切章节、LLM 字幕纠错）需要：
-requests>=2.31.0
-# 仅在运行 server.py（给手机用的局域网服务）时需要：
-fastapi>=0.110.0
-uvicorn[standard]>=0.27.0
-python-multipart>=0.0.9
