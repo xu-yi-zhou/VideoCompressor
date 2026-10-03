@@ -78,7 +78,16 @@ class CompressViewModel @Inject constructor(
             progressBus.events.collect { event ->
                 when (event) {
                     is CompressProgressBus.Event.Progress -> _uiState.update {
-                        it.copy(status = CompressStatus.Running(event.overall, event.index, event.count, event.name))
+                        it.copy(
+                            status = CompressStatus.Running(
+                                event.overall,
+                                event.index,
+                                event.count,
+                                event.name,
+                                event.uploading,
+                                event.uploadProgress
+                            )
+                        )
                     }
 
                     is CompressProgressBus.Event.Done -> _uiState.update { state ->
@@ -198,7 +207,11 @@ sealed class CompressStatus {
         val overall: Float,
         val index: Int,
         val count: Int,
-        val name: String
+        val name: String,
+        /** 是否处于网盘上传阶段 */
+        val uploading: Boolean = false,
+        /** 当前视频的上传进度 0~1 */
+        val uploadProgress: Float = 0f
     ) : CompressStatus()
 
     data class Done(val results: List<BatchResult>) : CompressStatus()

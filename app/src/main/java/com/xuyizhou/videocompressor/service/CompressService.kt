@@ -100,12 +100,22 @@ class CompressService : Service() {
                     codec = ""
                 )
 
-                // 单视频进度：压缩段 0~0.9，上传段 0.9~1.0
-                val emitProgress: (Float, Boolean) -> Unit = { itemProgress, uploading ->
+                // 单视频进度：压缩段 0~0.9，上传段 0.9~1.0。
+                // 通知与总线按 500ms 节流（1GB 上传会产生上万次回调），到 100% 时强制发射。
+                var lastEmit = 0L
+                fun emitProgress(
+                    itemProgress: Float,
+                    uploading: Boolean,
+                    uploadFrac: Float,
+                    force: Boolean = false
+                ) {
+                    val now = System.currentTimeMillis()
+                    if (!force && itemProgress < 1f && now - lastEmit < 500L) return
+                    lastEmit = now
                     val overall = (index + itemProgress.coerceIn(0f, 1f)) / count
                     getSystemService(NotificationManager::class.java)
                         .notify(NOTIFICATION_ID, buildNotification(overall, index, count, displayName, uploading))
-                    progressBus.progress(overall, index, count, displayName)
+                    progressBus.progress(overall, index, count, displayName, uploading, uploadFrac)
                 }
 
                 val result = compressUseCase(
@@ -113,7 +123,7 @@ class CompressService : Service() {
                     videoInfo = videoInfo,
                     config = config,
                     occurrence = occurrence,
-                    onProgress = { p -> emitProgress(p * 0.9f, false) }
+                    onProgress = { p -> emitProgress(p * 0.9f, false, 0f) }
                 )
 
                 result.fold(
@@ -122,14 +132,14 @@ class CompressService : Service() {
                         var uploadPath: String? = null
                         var uploadError: String? = null
                         if (autoUpload) {
-                            emitProgress(0.9f, true)
+                            emitProgress(0.9f, true, 0f, force = true)
                             if (!netdiskStore.hasAuth()) {
                                 uploadError = "网盘未授权"
                             } else if (!netdiskClient.ensureRemoteDir()) {
                                 uploadError = "创建网盘目录失败"
                             } else {
                                 netdiskClient.uploadFromUri(Uri.parse(path), outputFileName) { up ->
-                                    emitProgress(0.9f + 0.1f * up, true)
+                                    emitProgress(0.9f + 0.1f * up, true, up)
                                 }.fold(
                                     onSuccess = { uploadPath = it },
                                     onFailure = { e -> uploadError = e.message ?: "上传失败" }

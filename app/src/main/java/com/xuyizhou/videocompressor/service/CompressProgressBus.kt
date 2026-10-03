@@ -34,7 +34,11 @@ class CompressProgressBus @Inject constructor() {
             val overall: Float,
             val index: Int,
             val count: Int,
-            val name: String
+            val name: String,
+            /** 当前是否处于网盘上传阶段（压缩段 0~0.9，上传段 0.9~1.0） */
+            val uploading: Boolean = false,
+            /** 当前视频的上传进度 0~1（压缩阶段为 0） */
+            val uploadProgress: Float = 0f
         ) : Event()
 
         data class Done(val results: List<BatchResult>) : Event()
@@ -44,8 +48,15 @@ class CompressProgressBus @Inject constructor() {
     private val _events = MutableStateFlow<Event>(Event.Idle)
     val events: StateFlow<Event> = _events.asStateFlow()
 
-    fun progress(overall: Float, index: Int, count: Int, name: String) {
-        _events.value = Event.Progress(overall, index, count, name)
+    fun progress(
+        overall: Float,
+        index: Int,
+        count: Int,
+        name: String,
+        uploading: Boolean = false,
+        uploadProgress: Float = 0f
+    ) {
+        _events.value = Event.Progress(overall, index, count, name, uploading, uploadProgress)
     }
 
     fun done(results: List<BatchResult>) { _events.value = Event.Done(results) }
