@@ -18,6 +18,9 @@
     <!-- 压缩成品上传到百度网盘 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 自更新：调系统安装器安装从 GitHub Releases 下载的 APK -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- 前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -48,6 +51,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 自更新：向系统安装器暴露下载到 cacheDir/update/ 的 APK -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- 前台服务：防止后台被 MIUI/HyperOS 杀死 -->
         <service
