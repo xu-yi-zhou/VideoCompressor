@@ -32,9 +32,10 @@ class CompressVideoUseCase @Inject constructor(
         context: Context,
         videoInfo: VideoInfo,
         config: CompressConfig,
+        occurrence: Int = 1,
         onProgress: (Float) -> Unit
     ): Result<String> {
-        val outputPath = repository.generateOutputPath(videoInfo.name)
+        val outputPath = repository.generateOutputPath(videoInfo.name, occurrence)
         return compressor.compress(context, videoInfo.uri, outputPath, config, onProgress)
     }
 }

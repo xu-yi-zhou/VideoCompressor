@@ -54,12 +54,17 @@ class VideoRepository @Inject constructor(
         return VideoInfo(uri, name, size, duration, width, height, bitrate, codec)
     }
 
-    fun generateOutputPath(originalName: String): String {
+    /**
+     * 生成压缩输出路径，命名规则：源文件名（去扩展名）+ `_compressed`。
+     * 批量中同名视频冲突时（[occurrence] > 1）追加序号，如 `视频_compressed_2.mp4`。
+     */
+    fun generateOutputPath(originalName: String, occurrence: Int = 1): String {
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
             ?: context.filesDir
         if (!dir.exists()) dir.mkdirs()
         val nameWithoutExt = originalName.substringBeforeLast(".")
-        return "${dir.absolutePath}/${nameWithoutExt}_compressed.mp4"
+        val suffix = if (occurrence > 1) "_$occurrence" else ""
+        return "${dir.absolutePath}/${nameWithoutExt}_compressed$suffix.mp4"
     }
 
     private fun getFileName(uri: Uri): String {

@@ -70,15 +70,19 @@ class CompressService : Service() {
             var doneCount = 0
             var failedCount = 0
             val results = mutableListOf<BatchResult>()
+            val seenStems = mutableMapOf<String, Int>()
 
             for ((index, uriString) in uriStrings.withIndex()) {
                 val displayName = names.getOrNull(index)?.takeIf { it.isNotBlank() }
                     ?: "video_$index"
-                // 批量时输出名加序号后缀，避免同名视频相互覆盖
-                val outputName = if (count > 1) uniquify(displayName, index) else displayName
+                // 输出名 = 源文件名 + _compressed；批量中同名视频按出现次序加序号避免相互覆盖
+                val stem = displayName.substringBeforeLast('.')
+                val occurrence = seenStems.merge(stem, 1, Int::plus) ?: 1
+                val outputFileName = if (occurrence > 1) "${stem}_compressed_$occurrence.mp4"
+                else "${stem}_compressed.mp4"
                 val videoInfo = VideoInfo(
                     uri = Uri.parse(uriString),
-                    name = outputName,
+                    name = displayName,
                     size = 0L,
                     durationMs = 0L,
                     width = 0,
@@ -91,6 +95,7 @@ class CompressService : Service() {
                     context = this@CompressService,
                     videoInfo = videoInfo,
                     config = config,
+                    occurrence = occurrence,
                     onProgress = { progress ->
                         val overall = (index + progress.coerceIn(0f, 1f)) / count
                         getSystemService(NotificationManager::class.java)
@@ -119,14 +124,6 @@ class CompressService : Service() {
         }
 
         return START_NOT_STICKY
-    }
-
-    /** 「name.mp4」→「name_2.mp4」：加序号后缀防批量重名冲突。 */
-    private fun uniquify(name: String, index: Int): String {
-        val dot = name.lastIndexOf('.')
-        val stem = if (dot > 0) name.substring(0, dot) else name
-        val ext = if (dot > 0) name.substring(dot) else ""
-        return "${stem}_${index + 1}$ext"
     }
 
     private fun buildNotification(overall: Float, index: Int, count: Int, name: String): Notification {
