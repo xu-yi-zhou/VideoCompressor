@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -47,14 +48,16 @@ fun HomeScreen(
     val context = LocalContext.current
 
     val videoPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        uri?.let {
-            context.contentResolver.takePersistableUriPermission(
-                it,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            viewModel.onVideoSelected(it)
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            uris.forEach {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            viewModel.onVideosSelected(uris)
         }
     }
     val pickVideo = { videoPicker.launch(arrayOf("video/*")) }
@@ -80,10 +83,17 @@ fun HomeScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                VideoPickerCard(hasVideo = uiState.videoInfo != null, onClick = pickVideo)
-                uiState.videoInfo?.let { info ->
+                VideoPickerCard(
+                    hasVideo = uiState.videos.isNotEmpty(),
+                    videoCount = uiState.videos.size,
+                    onClick = pickVideo
+                )
+                if (uiState.videos.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(10.dp))
-                    FileInfoCard(info)
+                    uiState.videos.forEachIndexed { index, info ->
+                        FileInfoCard(info, onRemove = { viewModel.removeVideo(index) })
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
             }
 
@@ -121,18 +131,24 @@ private fun CompressTab(
             .fillMaxWidth()
             .height(52.dp),
         shape = RoundedCornerShape(16.dp),
-        enabled = uiState.videoInfo != null
+        enabled = uiState.videos.isNotEmpty()
     ) {
         Icon(Icons.Default.PlayArrow, contentDescription = null)
         Spacer(modifier = Modifier.width(8.dp))
-        Text("开始压缩", style = MaterialTheme.typography.titleMedium)
+        Text(
+            if (uiState.videos.size > 1) "开始压缩（${uiState.videos.size} 个）" else "开始压缩",
+            style = MaterialTheme.typography.titleMedium
+        )
     }
 
     Spacer(modifier = Modifier.height(16.dp))
 }
 
 @Composable
-private fun FileInfoCard(info: com.xuyizhou.videocompressor.data.model.VideoInfo) {
+private fun FileInfoCard(
+    info: com.xuyizhou.videocompressor.data.model.VideoInfo,
+    onRemove: (() -> Unit)? = null
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -141,7 +157,7 @@ private fun FileInfoCard(info: com.xuyizhou.videocompressor.data.model.VideoInfo
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -168,12 +184,22 @@ private fun FileInfoCard(info: com.xuyizhou.videocompressor.data.model.VideoInfo
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
+            if (onRemove != null) {
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "移除",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun VideoPickerCard(hasVideo: Boolean, onClick: () -> Unit) {
+private fun VideoPickerCard(hasVideo: Boolean, videoCount: Int, onClick: () -> Unit) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -210,13 +236,13 @@ private fun VideoPickerCard(hasVideo: Boolean, onClick: () -> Unit) {
             Spacer(modifier = Modifier.width(14.dp))
             Column {
                 Text(
-                    text = if (hasVideo) "已选择视频" else "点击选择视频",
+                    text = if (hasVideo) "已选择 $videoCount 个视频" else "点击选择视频",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = if (hasVideo) "点击可重新选择" else "支持 MP4 / MOV 等常见格式",
+                    text = if (hasVideo) "点击可重新选择（支持多选）" else "支持 MP4 / MOV 等常见格式",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

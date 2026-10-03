@@ -73,10 +73,8 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("result") {
-                        val outputPath = (uiState.status as? CompressStatus.Done)?.outputPath ?: ""
                         ResultScreen(
                             viewModel = viewModel,
-                            outputPath = outputPath,
                             onNewCompress = {
                                 navController.navigate("home") {
                                     popUpTo("home") { inclusive = true }

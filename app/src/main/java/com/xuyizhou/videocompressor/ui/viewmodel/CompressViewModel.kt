@@ -19,6 +19,7 @@ import com.xuyizhou.videocompressor.data.repository.VideoRepository
 import com.xuyizhou.videocompressor.domain.compressor.DeviceCodecProfiler
 import com.xuyizhou.videocompressor.domain.compressor.ThermalGovernor
 import com.xuyizhou.videocompressor.domain.usecase.CompressVideoUseCase
+import com.xuyizhou.videocompressor.service.BatchResult
 import com.xuyizhou.videocompressor.service.CompressProgressBus
 import com.xuyizhou.videocompressor.service.CompressService
 import com.google.gson.Gson
@@ -37,6 +38,7 @@ import javax.inject.Inject
  * 应用核心 ViewModel，作用域为 Activity，生命周期跨越所有导航页面。
  *
  * 持有并暴露 [uiState]（[kotlinx.coroutines.flow.StateFlow]），驱动全部 UI 状态：
+ * - 待压缩视频列表（[CompressUiState.videos]），支持多选批量压缩
  * - 压缩状态（[CompressStatus]）：Idle / Running / Done / Error
  * - 设备编码能力画像（[com.xuyizhou.videocompressor.data.model.DeviceProfile]）
  *
@@ -65,8 +67,16 @@ class CompressViewModel @Inject constructor(
         viewModelScope.launch {
             progressBus.events.collect { event ->
                 when (event) {
-                    is CompressProgressBus.Event.Progress -> onProgressUpdate(event.value)
-                    is CompressProgressBus.Event.Complete -> onCompressComplete(event.outputPath)
+                    is CompressProgressBus.Event.Progress -> _uiState.update {
+                        it.copy(status = CompressStatus.Running(event.overall, event.index, event.count, event.name))
+                    }
+
+                    is CompressProgressBus.Event.Done -> _uiState.update { state ->
+                        state.copy(status = CompressStatus.Done(event.results.map { r ->
+                            r.copy(inputSize = state.videos.getOrNull(r.index)?.size ?: 0L)
+                        }))
+                    }
+
                     is CompressProgressBus.Event.Error -> onCompressError(event.message)
                     CompressProgressBus.Event.Idle -> {}
                 }
@@ -78,11 +88,15 @@ class CompressViewModel @Inject constructor(
         _uiState.update { it.copy(thermalLabel = thermalGovernor.currentLevel().label) }
     }
 
-    fun onVideoSelected(uri: Uri) {
+    fun onVideosSelected(uris: List<Uri>) {
         viewModelScope.launch(Dispatchers.IO) {
-            val info = repository.getVideoInfo(uri)
-            _uiState.update { it.copy(videoInfo = info) }
+            val infos = uris.map { repository.getVideoInfo(it) }
+            _uiState.update { it.copy(videos = infos) }
         }
+    }
+
+    fun removeVideo(index: Int) {
+        _uiState.update { it.copy(videos = it.videos.filterIndexed { i, _ -> i != index }) }
     }
 
     fun updateConfig(config: CompressConfig) {
@@ -90,30 +104,25 @@ class CompressViewModel @Inject constructor(
     }
 
     fun startCompress() {
-        val videoInfo = _uiState.value.videoInfo ?: return
+        val videos = _uiState.value.videos
+        if (videos.isEmpty()) return
         val config = _uiState.value.config
 
-        Log.d("CompressVM", "startCompress via CompressService: uri=${videoInfo.uri}, name=${videoInfo.name}")
+        Log.d("CompressVM", "startCompress via CompressService: count=${videos.size}")
         progressBus.reset()
-        _uiState.update { it.copy(status = CompressStatus.Running(0f)) }
+        _uiState.update {
+            it.copy(status = CompressStatus.Running(0f, 0, videos.size, videos.first().name))
+        }
 
         val configJson = Gson().toJson(config)
         val intent = Intent(context, CompressService::class.java).apply {
-            putExtra("video_uri", videoInfo.uri)
+            putStringArrayListExtra("video_uris", ArrayList(videos.map { it.uri.toString() }))
+            putStringArrayListExtra("video_names", ArrayList(videos.map { it.name }))
             putExtra("config", configJson)
         }
 
         context.startForegroundService(intent)
         Log.d("CompressVM", "CompressService 已启动")
-    }
-
-    fun onProgressUpdate(progress: Float) {
-        _uiState.update { it.copy(status = CompressStatus.Running(progress)) }
-    }
-
-    fun onCompressComplete(path: String) {
-        Log.d("CompressVM", "压缩完成: $path")
-        _uiState.update { it.copy(status = CompressStatus.Done(path)) }
     }
 
     fun onCompressError(message: String) {
@@ -133,7 +142,7 @@ class CompressViewModel @Inject constructor(
 }
 
 data class CompressUiState(
-    val videoInfo: VideoInfo? = null,
+    val videos: List<VideoInfo> = emptyList(),
     val config: CompressConfig = CompressConfig(),
     val status: CompressStatus = CompressStatus.Idle,
     val deviceProfile: DeviceProfile? = null,
@@ -142,7 +151,13 @@ data class CompressUiState(
 
 sealed class CompressStatus {
     data object Idle : CompressStatus()
-    data class Running(val progress: Float) : CompressStatus()
-    data class Done(val outputPath: String) : CompressStatus()
+    data class Running(
+        val overall: Float,
+        val index: Int,
+        val count: Int,
+        val name: String
+    ) : CompressStatus()
+
+    data class Done(val results: List<BatchResult>) : CompressStatus()
     data class Error(val message: String) : CompressStatus()
 }

@@ -9,7 +9,6 @@ package com.xuyizhou.videocompressor.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.net.Uri
@@ -27,6 +26,16 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * 视频压缩前台服务，一次运行顺序压缩一个视频列表（单视频即列表长度为 1）。
+ *
+ * 批量循环放在服务内部而非由 ViewModel 逐个拉起：Android 12+ 禁止应用在后台
+ * 启动前台服务，若 App 退到后台时由 ViewModel 启动下一轮会抛
+ * `ForegroundServiceStartNotAllowedException`；服务内循环则全程保持同一个前台服务。
+ *
+ * 进度与结果经 [CompressProgressBus] 回传 ViewModel：
+ * 整体进度 = (当前序号 + 单视频进度) / 总数，单项失败不中断后续视频。
+ */
 @AndroidEntryPoint
 class CompressService : Service() {
 
@@ -39,67 +48,71 @@ class CompressService : Service() {
     companion object {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "compress_channel"
-        const val ACTION_COMPRESS_COMPLETE = "com.xuyizhou.videocompressor.COMPRESS_COMPLETE"
-        const val ACTION_COMPRESS_ERROR = "com.xuyizhou.videocompressor.COMPRESS_ERROR"
-        const val ACTION_PROGRESS_UPDATE = "com.xuyizhou.videocompressor.PROGRESS_UPDATE"
-        const val EXTRA_OUTPUT_PATH = "output_path"
-        const val EXTRA_ERROR_MESSAGE = "error_message"
-        const val EXTRA_PROGRESS = "progress"
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val videoUri: Uri? = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            intent?.getParcelableExtra("video_uri", Uri::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            intent?.getParcelableExtra("video_uri")
-        }
+        val uriStrings: List<String> = intent?.getStringArrayListExtra("video_uris") ?: emptyList()
+        val names: List<String> = intent?.getStringArrayListExtra("video_names") ?: emptyList()
         val configJson: String? = intent?.getStringExtra("config")
 
-        if (videoUri == null || configJson == null) {
+        if (uriStrings.isEmpty() || configJson == null) {
             stopSelf()
             return START_NOT_STICKY
         }
 
         val config = gson.fromJson(configJson, CompressConfig::class.java)
-        val videoInfo = VideoInfo(
-            uri = videoUri,
-            name = "video_${System.currentTimeMillis()}",
-            size = 0L,
-            durationMs = 0L,
-            width = 0,
-            height = 0,
-            bitrate = 0,
-            codec = ""
-        )
+        val count = uriStrings.size
 
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification(0f))
+        startForeground(NOTIFICATION_ID, buildNotification(0f, 0, count, names.firstOrNull() ?: ""))
 
         serviceScope.launch {
-            val result = compressUseCase(
-                context = this@CompressService,
-                videoInfo = videoInfo,
-                config = config,
-                onProgress = { progress ->
-                    val notif = buildNotification(progress)
-                    getSystemService(NotificationManager::class.java)
-                        .notify(NOTIFICATION_ID, notif)
+            var doneCount = 0
+            var failedCount = 0
+            val results = mutableListOf<BatchResult>()
 
-                    progressBus.progress(progress)
-                }
-            )
+            for ((index, uriString) in uriStrings.withIndex()) {
+                val displayName = names.getOrNull(index)?.takeIf { it.isNotBlank() }
+                    ?: "video_$index"
+                // 批量时输出名加序号后缀，避免同名视频相互覆盖
+                val outputName = if (count > 1) uniquify(displayName, index) else displayName
+                val videoInfo = VideoInfo(
+                    uri = Uri.parse(uriString),
+                    name = outputName,
+                    size = 0L,
+                    durationMs = 0L,
+                    width = 0,
+                    height = 0,
+                    bitrate = 0,
+                    codec = ""
+                )
 
-            result.fold(
-                onSuccess = { path ->
-                    progressBus.complete(path)
-                    showDoneNotification(path)
-                },
-                onFailure = { e ->
-                    progressBus.error(e.message ?: "未知错误")
-                    showErrorNotification(e.message ?: "未知错误")
-                }
-            )
+                val result = compressUseCase(
+                    context = this@CompressService,
+                    videoInfo = videoInfo,
+                    config = config,
+                    onProgress = { progress ->
+                        val overall = (index + progress.coerceIn(0f, 1f)) / count
+                        getSystemService(NotificationManager::class.java)
+                            .notify(NOTIFICATION_ID, buildNotification(overall, index, count, displayName))
+                        progressBus.progress(overall, index, count, displayName)
+                    }
+                )
+
+                result.fold(
+                    onSuccess = { path ->
+                        doneCount++
+                        results += BatchResult(index = index, name = displayName, outputUri = path)
+                    },
+                    onFailure = { e ->
+                        failedCount++
+                        results += BatchResult(index = index, name = displayName, error = e.message ?: "未知错误")
+                    }
+                )
+            }
+
+            progressBus.done(results.sortedBy { it.index })
+            showDoneNotification(doneCount, failedCount)
 
             stopForeground(STOP_FOREGROUND_DETACH)
             stopSelf()
@@ -108,32 +121,30 @@ class CompressService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun buildNotification(progress: Float): Notification {
+    /** 「name.mp4」→「name_2.mp4」：加序号后缀防批量重名冲突。 */
+    private fun uniquify(name: String, index: Int): String {
+        val dot = name.lastIndexOf('.')
+        val stem = if (dot > 0) name.substring(0, dot) else name
+        val ext = if (dot > 0) name.substring(dot) else ""
+        return "${stem}_${index + 1}$ext"
+    }
+
+    private fun buildNotification(overall: Float, index: Int, count: Int, name: String): Notification {
+        val pct = (overall * 100).toInt()
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("视频压缩中")
-            .setContentText("进度：${(progress * 100).toInt()}%")
+            .setContentTitle("视频压缩中（第 ${index + 1}/$count 个）")
+            .setContentText("$name · $pct%")
             .setSmallIcon(android.R.drawable.ic_menu_slideshow)
-            .setProgress(100, (progress * 100).toInt(), false)
+            .setProgress(100, pct, false)
             .setOngoing(true)
             .build()
     }
 
-    private fun showDoneNotification(path: String) {
+    private fun showDoneNotification(doneCount: Int, failedCount: Int) {
         val notif = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("压缩完成")
-            .setContentText("视频已保存")
+            .setContentText("成功 $doneCount 个，失败 $failedCount 个")
             .setSmallIcon(android.R.drawable.ic_menu_slideshow)
-            .setAutoCancel(true)
-            .build()
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID + 1, notif)
-    }
-
-    private fun showErrorNotification(message: String) {
-        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("压缩失败")
-            .setContentText(message)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setAutoCancel(true)
             .build()
         getSystemService(NotificationManager::class.java)

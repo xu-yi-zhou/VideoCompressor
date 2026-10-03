@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 软件名称：视频压缩工具箱（VideoCompressor）
  * 版权所有 © 2025 XU Yizhou。保留所有权利。
  * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
@@ -27,13 +27,13 @@ import kotlinx.coroutines.delay
 @Composable
 fun ProgressScreen(
     viewModel: CompressViewModel,
-    onDone: (String) -> Unit,
+    onDone: () -> Unit,
     onError: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
     val progress = when (val status = uiState.status) {
-        is CompressStatus.Running -> status.progress
+        is CompressStatus.Running -> status.overall
         else -> 0f
     }
 
@@ -45,7 +45,7 @@ fun ProgressScreen(
     val status = uiState.status
     LaunchedEffect(status) {
         when (status) {
-            is CompressStatus.Done -> onDone(status.outputPath)
+            is CompressStatus.Done -> onDone()
             is CompressStatus.Error -> onError()
             else -> {}
         }
@@ -96,11 +96,22 @@ fun ProgressScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                text = "正在压缩视频...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (uiState.status is CompressStatus.Running) {
+                val running = uiState.status as CompressStatus.Running
+                Text(
+                    text = "第 ${running.index + 1}/${running.count} 个 · ${running.name}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            } else {
+                Text(
+                    text = "正在压缩视频...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
