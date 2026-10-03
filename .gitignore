@@ -12,3 +12,6 @@ keystore/*.jks
 local.properties
 *.log
 .claude/settings.local.json
+
+# IDE 本机状态
+.idea/
