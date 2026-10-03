@@ -6,6 +6,7 @@
  */
 package com.xuyizhou.videocompressor.data.update
 
+import android.util.Log
 import com.google.gson.Gson
 import com.xuyizhou.videocompressor.BuildConfig
 import com.xuyizhou.videocompressor.data.model.GithubAsset
@@ -32,6 +33,10 @@ class UpdateClient @Inject constructor() {
 
     private val gson = Gson()
 
+    private companion object {
+        const val TAG = "UpdateClient"
+    }
+
     private val apiClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -57,7 +62,9 @@ class UpdateClient @Inject constructor() {
             .header("User-Agent", "VideoCompressor")
             .header("Accept", "application/vnd.github+json")
             .build()
+        Log.d(TAG, "fetchLatestRelease url=${apiUrl()}")
         apiClient.newCall(request).execute().use { resp ->
+            Log.d(TAG, "fetchLatestRelease resp=${resp.code}")
             when {
                 resp.code == 404 -> null
                 !resp.isSuccessful -> throw IllegalStateException("GitHub API HTTP ${resp.code}")
@@ -88,7 +95,9 @@ class UpdateClient @Inject constructor() {
                         .url(asset.browserDownloadUrl)
                         .header("User-Agent", "VideoCompressor")
                         .build()
+                    Log.d(TAG, "downloadApk start url=${asset.browserDownloadUrl}")
                     downloadClient.newCall(request).execute().use { resp ->
+                        Log.d(TAG, "downloadApk resp=${resp.code} len=${resp.body?.contentLength()}")
                         if (!resp.isSuccessful) throw IllegalStateException("下载失败 HTTP ${resp.code}")
                         val body = resp.body ?: throw IllegalStateException("下载失败：空响应体")
                         val total = body.contentLength()
@@ -102,6 +111,7 @@ class UpdateClient @Inject constructor() {
                                     if (n < 0) break
                                     output.write(buf, 0, n)
                                     read += n
+                                    if (read == n.toLong()) Log.d(TAG, "downloadApk 首块到达 ${n}B")
                                     onProgress(read, total)
                                 }
                             }
