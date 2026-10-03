@@ -18,7 +18,7 @@ package com.xuyizhou.videocompressor.data.model
 data class CompressConfig(
     val quality: Quality = Quality.BALANCED,
     val resolution: Resolution = Resolution.KEEP_ORIGINAL,
-    val encoder: Encoder = Encoder.AUTO,
+    val encoder: Encoder = Encoder.H265,
     val audioEnabled: Boolean = true
 ) {
     enum class Quality(val crf: Int, val label: String) {
@@ -35,9 +35,7 @@ data class CompressConfig(
     }
 
     enum class Encoder(val label: String) {
-        AUTO("自动选择"),
-        HARDWARE_HEVC("硬件 H.265（骁龙优先）"),
-        FFMPEG_HEVC("FFmpeg H.265"),
-        FFMPEG_H264("FFmpeg H.264")
+        H265("H.265（更小）"),
+        H264("H.264（更兼容）")
     }
 }
