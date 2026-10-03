@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 软件名称：视频压缩工具箱（VideoCompressor）
  * 版权所有 © 2025 XU Yizhou。保留所有权利。
  * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
@@ -48,7 +48,12 @@ class CompressService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val videoUri: Uri? = intent?.getParcelableExtra("video_uri")
+        val videoUri: Uri? = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra("video_uri", Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra("video_uri")
+        }
         val configJson: String? = intent?.getStringExtra("config")
 
         if (videoUri == null || configJson == null) {

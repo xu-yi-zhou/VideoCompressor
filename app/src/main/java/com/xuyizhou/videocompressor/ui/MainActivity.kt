@@ -31,7 +31,6 @@ import dagger.hilt.android.AndroidEntryPoint
  * - `progress` — 压缩进度页（[com.xuyizhou.videocompressor.ui.screen.ProgressScreen]）
  * - `result` — 压缩完成结果页（[com.xuyizhou.videocompressor.ui.screen.ResultScreen]）
  * - `error` — 压缩失败错误页（[com.xuyizhou.videocompressor.ui.screen.ErrorScreen]）
- * - `subtitle_edit` — 字幕逐句编辑页（[com.xuyizhou.videocompressor.ui.screen.SubtitleEditScreen]）
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -55,18 +54,7 @@ class MainActivity : ComponentActivity() {
                             viewModel = viewModel,
                             onStartCompress = {
                                 navController.navigate("progress")
-                            },
-                            onEditSubtitle = { srtPath ->
-                                viewModel.loadSubtitles(srtPath)
-                                navController.navigate("subtitle_edit")
                             }
-                        )
-                    }
-                    composable("subtitle_edit") {
-                        SubtitleEditScreen(
-                            viewModel = viewModel,
-                            videoUri = uiState.videoInfo?.uri,
-                            onBack = { navController.popBackStack() }
                         )
                     }
                     composable("progress") {

@@ -17,42 +17,34 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Movie
-import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import com.xuyizhou.videocompressor.data.model.CompressConfig
 import com.xuyizhou.videocompressor.ui.viewmodel.CompressViewModel
-import com.xuyizhou.videocompressor.ui.viewmodel.TranscribeStatus
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: CompressViewModel,
-    onStartCompress: () -> Unit,
-    onEditSubtitle: (String) -> Unit
+    onStartCompress: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     val videoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -78,24 +70,30 @@ fun HomeScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            val tabs = listOf("压缩" to Icons.Default.PlayArrow, "字幕 / 节点" to Icons.Outlined.Subtitles)
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.background
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                tabs.forEachIndexed { index, (title, icon) ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = { Text(title) },
-                        icon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    )
+                VideoPickerCard(hasVideo = uiState.videoInfo != null, onClick = pickVideo)
+                uiState.videoInfo?.let { info ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    FileInfoCard(info)
                 }
             }
-            when (selectedTab) {
-                0 -> CompressTab(uiState, viewModel, pickVideo, onStartCompress)
-                else -> TranscribeTab(uiState, viewModel, pickVideo, onEditSubtitle)
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CompressTab(uiState, viewModel, onStartCompress)
             }
         }
     }
@@ -105,225 +103,73 @@ fun HomeScreen(
 private fun CompressTab(
     uiState: com.xuyizhou.videocompressor.ui.viewmodel.CompressUiState,
     viewModel: CompressViewModel,
-    onPickVideo: () -> Unit,
     onStartCompress: () -> Unit
 ) {
-    Column(
+    CompressSettingsCard(
+        config = uiState.config,
+        onConfigChange = { viewModel.updateConfig(it) }
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Button(
+        onClick = {
+            viewModel.startCompress()
+            onStartCompress()
+        },
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(16.dp),
+        enabled = uiState.videoInfo != null
     ) {
-        VideoPickerCard(hasVideo = uiState.videoInfo != null, onClick = onPickVideo)
-
-        uiState.deviceProfile?.let { profile ->
-            Spacer(modifier = Modifier.height(12.dp))
-            DeviceCapabilityCard(profile, uiState.thermalLabel)
-        }
-
-        uiState.videoInfo?.let { info ->
-            Spacer(modifier = Modifier.height(12.dp))
-            FileInfoCard(info)
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        CompressSettingsCard(
-            config = uiState.config,
-            onConfigChange = { viewModel.updateConfig(it) }
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = {
-                viewModel.startCompress()
-                onStartCompress()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            enabled = uiState.videoInfo != null
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("开始压缩", style = MaterialTheme.typography.titleMedium)
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Icon(Icons.Default.PlayArrow, contentDescription = null)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("开始压缩", style = MaterialTheme.typography.titleMedium)
     }
-}
 
-@Composable
-private fun TranscribeTab(
-    uiState: com.xuyizhou.videocompressor.ui.viewmodel.CompressUiState,
-    viewModel: CompressViewModel,
-    onPickVideo: () -> Unit,
-    onEditSubtitle: (String) -> Unit
-) {
-    val context = LocalContext.current
-    val running = uiState.transcribeStatus is TranscribeStatus.Running
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        VideoPickerCard(hasVideo = uiState.videoInfo != null, onClick = onPickVideo)
-
-        uiState.videoInfo?.let { info ->
-            Spacer(modifier = Modifier.height(12.dp))
-            FileInfoCard(info)
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        SectionCard(title = "字幕 / 节点", icon = Icons.Outlined.Subtitles) {
-            Text(
-                "由局域网内的电脑端服务转写。手机抽取音频上传，电脑用 faster-whisper 识别并切分章节。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = uiState.serverUrl,
-                onValueChange = { viewModel.updateServerUrl(it) },
-                label = { Text("电脑服务地址") },
-                placeholder = { Text("例如 192.168.1.20:8000") },
-                leadingIcon = { Icon(Icons.Outlined.Computer, contentDescription = null) },
-                singleLine = true,
-                enabled = !running,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(14.dp))
-            Button(
-                onClick = { viewModel.startTranscribe() },
-                enabled = uiState.videoInfo != null && !running,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Outlined.Subtitles, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("生成字幕")
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                "生成后可逐句校对，确认无误再分享 SRT 或烧进视频。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        TranscribeStatusCard(
-            status = uiState.transcribeStatus,
-            context = context,
-            onReset = { viewModel.resetTranscribe() },
-            onEditSubtitle = onEditSubtitle
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun TranscribeStatusCard(
-    status: TranscribeStatus,
-    context: android.content.Context,
-    onReset: () -> Unit,
-    onEditSubtitle: (String) -> Unit
-) {
-    when (status) {
-        is TranscribeStatus.Idle -> Unit
-
-        is TranscribeStatus.Running -> SectionCard(title = "处理进度", icon = Icons.Outlined.Subtitles) {
-            Text(status.stage, style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(10.dp))
-            if (status.progress != null) {
-                LinearProgressIndicator(
-                    progress = { status.progress },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    "${(status.progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-        }
-
-        is TranscribeStatus.Done -> SectionCard(
-            title = "字幕已生成",
-            icon = Icons.Outlined.Subtitles,
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        ) {
-            Text(
-                "下一步：逐句校对字幕，确认无误后再分享 SRT 或烧进视频。",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = { onEditSubtitle(status.srtPath) },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Outlined.Subtitles, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("逐句校对并导出")
-                }
-                OutlinedButton(onClick = onReset, shape = RoundedCornerShape(12.dp)) { Text("完成") }
-            }
-        }
-
-        is TranscribeStatus.DoneVideo -> SectionCard(
-            title = "烧字幕完成",
-            icon = Icons.Outlined.Movie,
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        ) {
-            Text("成品已保存到相册（Movies）。", style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(onClick = onReset, shape = RoundedCornerShape(12.dp)) { Text("完成") }
-        }
-
-        is TranscribeStatus.Error -> SectionCard(
-            title = "处理失败",
-            icon = Icons.Outlined.Subtitles,
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        ) {
-            Text(status.message, style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(onClick = onReset, shape = RoundedCornerShape(12.dp)) { Text("知道了") }
-        }
-    }
+    Spacer(modifier = Modifier.height(16.dp))
 }
 
 @Composable
 private fun FileInfoCard(info: com.xuyizhou.videocompressor.data.model.VideoInfo) {
-    SectionCard(title = "文件信息", icon = Icons.Outlined.Movie) {
-        InfoRow("文件名", info.name)
-        InfoRow("大小", formatSize(info.size))
-        InfoRow("时长", formatDuration(info.durationMs))
-        InfoRow("分辨率", "${info.width} x ${info.height}")
-        InfoRow("编码", info.codec)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.Movie,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    info.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    "${formatSize(info.size)} · ${formatDuration(info.durationMs)} · ${info.width}×${info.height} · ${info.codec}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+        }
     }
-}
-
-internal fun shareFile(context: android.content.Context, file: File) {
-    if (!file.exists()) return
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "*/*"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(Intent.createChooser(intent, "分享字幕").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
 @Composable
@@ -333,78 +179,49 @@ private fun VideoPickerCard(hasVideo: Boolean, onClick: () -> Unit) {
             .fillMaxWidth()
             .padding(top = 4.dp),
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.elevatedCardColors(
             containerColor = if (hasVideo)
-                MaterialTheme.colorScheme.secondaryContainer
+                lerp(MaterialTheme.colorScheme.secondaryContainer, Color.Black, 0.18f)
             else MaterialTheme.colorScheme.primaryContainer
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
                 shape = RoundedCornerShape(50),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
             ) {
                 Icon(
-                    Icons.Outlined.VideoLibrary,
+                    if (hasVideo) Icons.Outlined.CheckCircle else Icons.Outlined.VideoLibrary,
                     contentDescription = null,
                     modifier = Modifier
-                        .padding(14.dp)
-                        .size(32.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                        .padding(10.dp)
+                        .size(24.dp),
+                    tint = if (hasVideo)
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    else MaterialTheme.colorScheme.primary
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = if (hasVideo) "已选择视频，点击可重新选择" else "点击选择视频",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "支持 MP4 / MOV 等常见格式",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun DeviceCapabilityCard(
-    profile: com.xuyizhou.videocompressor.data.model.DeviceProfile,
-    thermalLabel: String
-) {
-    SectionCard(
-        title = "本机编码能力",
-        icon = Icons.Outlined.Memory,
-        containerColor = if (profile.isXring)
-            MaterialTheme.colorScheme.tertiaryContainer
-        else MaterialTheme.colorScheme.surfaceVariant,
-        trailing = {
-            if (profile.isXring) {
-                AssistChip(onClick = {}, label = { Text("玄戒 O1 已适配") })
+            Spacer(modifier = Modifier.width(14.dp))
+            Column {
+                Text(
+                    text = if (hasVideo) "已选择视频" else "点击选择视频",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = if (hasVideo) "点击可重新选择" else "支持 MP4 / MOV 等常见格式",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
-    ) {
-        profile.summaryLines.forEach { line ->
-            Text(
-                "· $line",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(vertical = 1.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            "当前温度状态：$thermalLabel",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -419,10 +236,16 @@ fun CompressSettingsCard(
             icon = Icons.Outlined.HighQuality,
             options = CompressConfig.Quality.entries,
             selected = config.quality,
-            label = { it.label },
+            label = {
+                when (it) {
+                    CompressConfig.Quality.HIGH -> "高质量"
+                    CompressConfig.Quality.BALANCED -> "均衡"
+                    CompressConfig.Quality.SMALL -> "最小体积"
+                }
+            },
             onSelect = { onConfigChange(config.copy(quality = it)) }
         )
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         ChipGroup(
             title = "分辨率",
             icon = Icons.Outlined.AspectRatio,
@@ -431,7 +254,7 @@ fun CompressSettingsCard(
             label = { it.label },
             onSelect = { onConfigChange(config.copy(resolution = it)) }
         )
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         ChipGroup(
             title = "编码器",
             icon = Icons.Outlined.Memory,
@@ -469,13 +292,20 @@ private fun <T> ChipGroup(
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             options.forEach { option ->
                 FilterChip(
                     selected = selected == option,
                     onClick = { onSelect(option) },
-                    label = { Text(label(option)) },
-                    shape = RoundedCornerShape(12.dp)
+                    label = {
+                        Text(
+                            label(option),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1
+                        )
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.height(32.dp)
                 )
             }
         }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 软件名称：视频压缩工具箱（VideoCompressor）
  * 版权所有 © 2025 XU Yizhou。保留所有权利。
  * 本软件受《中华人民共和国著作权法》保护，未经著作权人书面许可，
@@ -87,7 +87,7 @@ fun ProgressScreen(
             Text(
                 text = run {
                     val pct = animatedProgress * 100
-                    if (pct > 0f && pct < 10f) String.format("%.1f%%", pct)
+                    if (pct > 0f && pct < 10f) String.format(java.util.Locale.ROOT, "%.1f%%", pct)
                     else "${pct.toInt()}%"
                 },
                 style = MaterialTheme.typography.headlineLarge,

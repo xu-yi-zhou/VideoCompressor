@@ -39,8 +39,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 }
 
@@ -69,11 +71,4 @@ dependencies {
 
     // Gson (JSON serialization for CompressService)
     implementation("com.google.code.gson:gson:2.10.1")
-
-    // OkHttp（电脑端转录/烧字幕服务的局域网客户端）
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
-    // Media3 ExoPlayer（字幕编辑页的逐句播放/预览）
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
 }
