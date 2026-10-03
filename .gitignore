@@ -1,0 +1,4 @@
+# Gradle 构建产物
+.gradle/
+build/
+app/build/
