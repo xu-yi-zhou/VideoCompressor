@@ -1,3 +1,6 @@
+// android {} 块内 `java` 会被 DSL 作用域遮蔽，Properties 需显式导入
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -17,9 +20,39 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        // GitHub Releases 自更新：仓库地址与版本号同处维护，发布前填真实 GitHub 用户名
+        buildConfigField("String", "UPDATE_OWNER", "\"your-github-username\"")
+        buildConfigField("String", "UPDATE_REPO", "\"VideoCompressor\"")
+
         javaCompileOptions {
             annotationProcessorOptions {
                 arguments["room.schemaLocation"] = "$projectDir/schemas"
+            }
+        }
+    }
+
+    // AGP 8 默认关闭 BuildConfig，自更新需读取 BuildConfig.VERSION_NAME
+    buildFeatures {
+        buildConfig = true
+    }
+
+    signingConfigs {
+        // 正式签名：keystore.properties（仓库内为占位模板，本机真实值靠 skip-worktree
+        // 保护，仿 NetdiskConfig 先例）。文件与 keystore 均存在才启用，否则他人
+        // clone 后仍可构建（产物为未签名包）。
+        val propsFile = rootProject.file("keystore.properties")
+        if (propsFile.exists()) {
+            val props = Properties().apply {
+                propsFile.inputStream().use { load(it) }
+            }
+            val store = rootProject.file(props.getProperty("storeFile"))
+            if (store.exists()) {
+                create("release") {
+                    storeFile = store
+                    storePassword = props.getProperty("storePassword")
+                    keyAlias = props.getProperty("keyAlias")
+                    keyPassword = props.getProperty("keyPassword")
+                }
             }
         }
     }
@@ -31,6 +64,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
