@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -36,9 +37,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.xuyizhou.videocompressor.BuildConfig
 import com.xuyizhou.videocompressor.data.model.CompressConfig
+import com.xuyizhou.videocompressor.data.model.GithubRelease
 import com.xuyizhou.videocompressor.data.netdisk.NetdiskConfig
 import com.xuyizhou.videocompressor.ui.viewmodel.CompressViewModel
+import com.xuyizhou.videocompressor.ui.viewmodel.UpdateUiState
+import com.xuyizhou.videocompressor.util.ApkInstaller
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +53,7 @@ fun HomeScreen(
     onOpenAuth: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
     val context = LocalContext.current
 
     val videoPicker = rememberLauncherForActivityResult(
@@ -106,7 +112,7 @@ fun HomeScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                CompressTab(uiState, viewModel, onStartCompress, onOpenAuth)
+                CompressTab(uiState, updateState, viewModel, onStartCompress, onOpenAuth)
             }
         }
     }
@@ -115,10 +121,13 @@ fun HomeScreen(
 @Composable
 private fun CompressTab(
     uiState: com.xuyizhou.videocompressor.ui.viewmodel.CompressUiState,
+    updateState: UpdateUiState,
     viewModel: CompressViewModel,
     onStartCompress: () -> Unit,
     onOpenAuth: () -> Unit
 ) {
+    val context = LocalContext.current
+
     CompressSettingsCard(
         config = uiState.config,
         onConfigChange = { viewModel.updateConfig(it) }
@@ -134,6 +143,10 @@ private fun CompressTab(
         onOpenAuth = onOpenAuth,
         onClearAuth = { viewModel.clearNetdiskAuth() }
     )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    UpdateCard(updateState = updateState, onCheck = { viewModel.checkForUpdates() })
 
     Spacer(modifier = Modifier.height(16.dp))
 
@@ -157,6 +170,159 @@ private fun CompressTab(
     }
 
     Spacer(modifier = Modifier.height(16.dp))
+
+    UpdateDialog(
+        state = updateState,
+        onDownload = { viewModel.downloadUpdate(it) },
+        onCancelDownload = { viewModel.cancelDownload() },
+        onInstall = {
+            (updateState as? UpdateUiState.Downloaded)?.let { downloaded ->
+                when {
+                    // 未授权「安装未知应用」→ 引导到系统设置
+                    !ApkInstaller.canInstall(context) -> ApkInstaller.openInstallSettings(context)
+                    // 安装器拉起成功 → 标记防重复；失败 → 浏览器打开 release 页兜底
+                    ApkInstaller.installApk(context, downloaded.file) ->
+                        viewModel.markInstallLaunched()
+                    else -> ApkInstaller.openInBrowser(context, downloaded.release.htmlUrl)
+                }
+            }
+        },
+        onDismiss = { viewModel.dismissUpdate() }
+    )
+}
+
+/** 关于与更新卡片：当前版本 + 检查结果状态行 + 手动检查按钮。 */
+@Composable
+private fun UpdateCard(updateState: UpdateUiState, onCheck: () -> Unit) {
+    SectionCard(title = "关于与更新", icon = Icons.Outlined.SystemUpdate) {
+        InfoRow("当前版本", BuildConfig.VERSION_NAME)
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = when (updateState) {
+                        is UpdateUiState.Checking -> "正在检查更新…"
+                        is UpdateUiState.CheckFailed -> "检查失败：${updateState.message}"
+                        is UpdateUiState.Downloading -> "正在下载更新…"
+                        else -> "已是最新版本"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (updateState is UpdateUiState.CheckFailed)
+                        MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (updateState is UpdateUiState.Available) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        "发现新版本 ${updateState.release.tagName}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = onCheck,
+                shape = RoundedCornerShape(12.dp),
+                enabled = updateState !is UpdateUiState.Checking &&
+                    updateState !is UpdateUiState.Downloading
+            ) { Text("检查更新") }
+        }
+    }
+}
+
+/** 自更新对话框：Available（发现新版）/ Downloading（下载进度）/ Downloaded（安装）/ DownloadFailed（重试）。 */
+@Composable
+private fun UpdateDialog(
+    state: UpdateUiState,
+    onDownload: (GithubRelease) -> Unit,
+    onCancelDownload: () -> Unit,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    when (state) {
+        is UpdateUiState.Available -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("发现新版本 ${state.release.tagName}") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .heightIn(max = 240.dp)
+                ) {
+                    InfoRow("当前版本", BuildConfig.VERSION_NAME)
+                    InfoRow("新版本", state.release.tagName)
+                    state.release.body?.takeIf { it.isNotBlank() }?.let { body ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("更新内容：", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            body,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onDownload(state.release) }) { Text("立即下载") }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("暂不") } }
+        )
+
+        is UpdateUiState.Downloading -> AlertDialog(
+            // 下载中不允许点外部关闭，只能「取消下载」，防止状态不一致
+            onDismissRequest = {},
+            title = { Text("正在下载更新") },
+            text = {
+                Column {
+                    LinearProgressIndicator(
+                        progress = { state.progress },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = if (state.total > 0)
+                            "正在下载 ${formatSize(state.bytesRead)} / ${formatSize(state.total)}"
+                        else "正在下载 ${formatSize(state.bytesRead)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = onCancelDownload) { Text("取消下载") } }
+        )
+
+        is UpdateUiState.Downloaded -> AlertDialog(
+            onDismissRequest = {},
+            title = { Text(if (state.installLaunched) "安装页面已打开" else "下载完成") },
+            text = {
+                Text(
+                    if (state.installLaunched)
+                        "请在系统安装器中完成安装，然后重新打开应用"
+                    else "新版本 APK 已下载，是否立即安装？",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                if (!state.installLaunched) {
+                    TextButton(onClick = onInstall) { Text("立即安装") }
+                }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+        )
+
+        is UpdateUiState.DownloadFailed -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("下载失败") },
+            text = { Text(state.message, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                TextButton(onClick = { onDownload(state.release) }) { Text("重试") }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        )
+
+        else -> {}
+    }
 }
 
 @Composable

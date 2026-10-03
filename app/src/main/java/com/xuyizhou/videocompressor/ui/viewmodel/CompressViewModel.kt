@@ -12,12 +12,16 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xuyizhou.videocompressor.BuildConfig
 import com.xuyizhou.videocompressor.data.model.CompressConfig
 import com.xuyizhou.videocompressor.data.model.DeviceProfile
+import com.xuyizhou.videocompressor.data.model.GithubRelease
 import com.xuyizhou.videocompressor.data.model.VideoInfo
 import com.xuyizhou.videocompressor.data.netdisk.NetdiskAuthStore
 import com.xuyizhou.videocompressor.data.netdisk.NetdiskClient
 import com.xuyizhou.videocompressor.data.repository.VideoRepository
+import com.xuyizhou.videocompressor.data.update.UpdateClient
+import com.xuyizhou.videocompressor.data.update.VersionComparator
 import com.xuyizhou.videocompressor.domain.compressor.DeviceCodecProfiler
 import com.xuyizhou.videocompressor.domain.compressor.ThermalGovernor
 import com.xuyizhou.videocompressor.domain.usecase.CompressVideoUseCase
@@ -28,6 +32,8 @@ import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +41,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 
 /**
@@ -57,6 +64,7 @@ class CompressViewModel @Inject constructor(
     private val progressBus: CompressProgressBus,
     private val netdiskStore: NetdiskAuthStore,
     private val netdiskClient: NetdiskClient,
+    private val updateClient: UpdateClient,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -68,11 +76,20 @@ class CompressViewModel @Inject constructor(
     )
     val uiState: StateFlow<CompressUiState> = _uiState.asStateFlow()
 
+    /** 自更新状态（独立于压缩状态），启动时自动检查一次 */
+    private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
+    val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
+
+    private var downloadJob: Job? = null
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             val profile = profiler.profile
             _uiState.update { it.copy(deviceProfile = profile, thermalLabel = thermalGovernor.currentLevel().label) }
         }
+
+        // 启动进首页时静默检查一次更新（VM 作用域 Activity，旋转/回首页不重复检查）
+        checkForUpdates()
 
         viewModelScope.launch {
             progressBus.events.collect { event ->
@@ -172,6 +189,87 @@ class CompressViewModel @Inject constructor(
         netdiskStore.clear()
         _uiState.update { it.copy(netdiskName = null, autoUpload = false) }
     }
+
+    // ── GitHub Releases 自更新 ─────────────────────────────
+
+    /** 查询最新 release；发现新版弹窗，已最新/失败只反映在卡片状态行（自动与手动共用）。 */
+    fun checkForUpdates() {
+        val state = _updateState.value
+        if (state is UpdateUiState.Checking || state is UpdateUiState.Downloading) return
+        _updateState.value = UpdateUiState.Checking
+        viewModelScope.launch(Dispatchers.IO) {
+            updateClient.fetchLatestRelease().fold(
+                onSuccess = { release ->
+                    val newer = release?.takeIf {
+                        VersionComparator.isNewer(BuildConfig.VERSION_NAME, it.tagName)
+                    }
+                    _updateState.value = if (newer != null) UpdateUiState.Available(newer)
+                    else UpdateUiState.UpToDate
+                },
+                onFailure = { e ->
+                    _updateState.value = UpdateUiState.CheckFailed(e.message ?: "网络异常")
+                }
+            )
+        }
+    }
+
+    /** 下载 APK（先清空 cacheDir/update/ 旧文件）；进度回调线程安全地写状态。 */
+    fun downloadUpdate(release: GithubRelease) {
+        if (_updateState.value is UpdateUiState.Downloading) return
+        val asset = release.assets.firstOrNull { it.name.endsWith(".apk") }
+        if (asset == null) {
+            _updateState.value = UpdateUiState.DownloadFailed("发布包中未找到 APK 附件", release)
+            return
+        }
+        val dir = File(context.cacheDir, "update")
+        dir.mkdirs()
+        dir.listFiles()?.forEach { it.delete() }
+        val dest = File(dir, apkFileName(release.tagName))
+        _updateState.value = UpdateUiState.Downloading(0f, 0L, -1L, release)
+        downloadJob = viewModelScope.launch(Dispatchers.IO) {
+            val scope = this // Result.fold 非 inline，先捕获 CoroutineScope 供 onFailure 里判断取消
+            updateClient.downloadApk(asset, dest) { read, total ->
+                val progress = if (total > 0) (read.toFloat() / total).coerceIn(0f, 1f) else 0f
+                _updateState.value = UpdateUiState.Downloading(progress, read, total, release)
+            }.fold(
+                onSuccess = { file ->
+                    _updateState.value = UpdateUiState.Downloaded(file, release)
+                },
+                onFailure = { e ->
+                    // 取消下载时协程已不活跃，此时不写 DownloadFailed（由 cancelDownload 接管状态）
+                    if (scope.isActive) {
+                        _updateState.value =
+                            UpdateUiState.DownloadFailed(e.message ?: "下载失败", release)
+                    }
+                }
+            )
+        }
+    }
+
+    /** 取消下载：回到 Available，用户可重新选择下载或暂不。 */
+    fun cancelDownload() {
+        val state = _updateState.value as? UpdateUiState.Downloading ?: return
+        downloadJob?.cancel()
+        downloadJob = null
+        _updateState.value = UpdateUiState.Available(state.release)
+    }
+
+    /** 系统安装器已被拉起，标记防重复触发。 */
+    fun markInstallLaunched() {
+        val state = _updateState.value
+        if (state is UpdateUiState.Downloaded) {
+            _updateState.value = state.copy(installLaunched = true)
+        }
+    }
+
+    /** 「暂不」/「关闭」：弹窗消失回 Idle。 */
+    fun dismissUpdate() {
+        if (_updateState.value is UpdateUiState.Downloading) return
+        _updateState.value = UpdateUiState.Idle
+    }
+
+    private fun apkFileName(tag: String): String =
+        "update_${tag.replace(Regex("[^0-9A-Za-z._-]"), "_")}.apk"
 
     fun onCompressError(message: String) {
         Log.e("CompressVM", "压缩失败: $message")
