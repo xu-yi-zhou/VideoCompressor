@@ -6,6 +6,7 @@
  */
 package com.xuyizhou.videocompressor.ui.screen
 
+import android.annotation.SuppressLint
 import android.os.Build
 import android.content.Context
 import android.content.Intent
@@ -21,6 +22,7 @@ import android.provider.Settings
  * 小米设备优先跳转至 MIUI 专属省电策略页；其他设备使用系统通用接口。
  */
 object BatteryOptimizationHelper {
+    @SuppressLint("BatteryLife", "QueryPermissionsNeeded")
     fun requestBatteryOptimizationExemption(context: Context) {
         if (Build.MANUFACTURER.equals("xiaomi", ignoreCase = true)) {
             val intent = Intent("miui.intent.action.POWER_HIDE_MODE_APP_LIST").apply {

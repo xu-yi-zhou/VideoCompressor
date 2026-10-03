@@ -103,6 +103,7 @@ class DeviceCodecProfiler @Inject constructor() {
         return isXiaomi && Regex("\\bo1\\b", RegexOption.IGNORE_CASE).containsMatchIn(socModel)
     }
 
+    @android.annotation.SuppressLint("InlinedApi")
     private fun findBestEncoder(mime: String): EncoderCaps? {
         var softwareFallback: EncoderCaps? = null
         runCatching {

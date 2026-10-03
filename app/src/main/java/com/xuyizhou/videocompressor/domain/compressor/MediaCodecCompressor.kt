@@ -6,6 +6,7 @@
  */
 package com.xuyizhou.videocompressor.domain.compressor
 
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import android.media.*
@@ -269,6 +270,7 @@ class MediaCodecCompressor @Inject constructor(
         audioMuxerTrack: Int
     ) = copyAudioFramesFrom(MediaExtractor().apply { setDataSource(context, inputUri, null) }, muxer, audioIdx, audioMuxerTrack)
 
+    @SuppressLint("WrongConstant")
     private fun copyAudioFramesFrom(
         audioExtractor: MediaExtractor,
         muxer: MediaMuxer,
@@ -335,7 +337,7 @@ class MediaCodecCompressor @Inject constructor(
                 downshifted = false
             )
         }
-        val wantsAvcOnly = config.encoder == CompressConfig.Encoder.FFMPEG_H264
+        val wantsAvcOnly = config.encoder == CompressConfig.Encoder.H264
         return when {
             wantsAvcOnly -> avc
             downshift && profile.avcEncoderName != null -> avc
@@ -344,6 +346,7 @@ class MediaCodecCompressor @Inject constructor(
         }
     }
 
+    @SuppressLint("InlinedApi")
     private fun configureEncoderWithFallback(
         encoder: MediaCodec,
         choice: EncoderChoice,
@@ -492,9 +495,7 @@ class MediaCodecCompressor @Inject constructor(
                     p == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus
                 ) return true
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-                format.containsKey(MediaFormat.KEY_COLOR_TRANSFER)
-            ) {
+            if (format.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) {
                 val t = format.getInteger(MediaFormat.KEY_COLOR_TRANSFER)
                 if (t == MediaFormat.COLOR_TRANSFER_ST2084 || t == MediaFormat.COLOR_TRANSFER_HLG) return true
             }
@@ -519,10 +520,11 @@ class MediaCodecCompressor @Inject constructor(
             PowerManager.PARTIAL_WAKE_LOCK,
             "VideoCompressor:compress"
         ).apply {
-            acquire()
+            acquire(2 * 60 * 60 * 1000L) // 2 hours max; finally block releases early on completion
         }
     }
 
+    @SuppressLint("InlinedApi")
     private fun insertToMediaStore(context: Context, filePath: String, config: CompressConfig): Uri {
         val file = java.io.File(filePath)
         val values = ContentValues().apply {
