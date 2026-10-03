@@ -20,8 +20,8 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // GitHub Releases 自更新：仓库地址与版本号同处维护，发布前填真实 GitHub 用户名
-        buildConfigField("String", "UPDATE_OWNER", "\"your-github-username\"")
+        // GitHub Releases 自更新：仓库地址与版本号同处维护
+        buildConfigField("String", "UPDATE_OWNER", "\"xu-yi-zhou\"")
         buildConfigField("String", "UPDATE_REPO", "\"VideoCompressor\"")
 
         javaCompileOptions {
