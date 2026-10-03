@@ -16,9 +16,9 @@ package com.xuyizhou.videocompressor.data.model
  * @property audioEnabled 是否保留音轨（当前版本始终保留）。
  */
 data class CompressConfig(
-    val quality: Quality = Quality.BALANCED,
+    val quality: Quality = Quality.SMALL,
     val resolution: Resolution = Resolution.KEEP_ORIGINAL,
-    val encoder: Encoder = Encoder.H265,
+    val encoder: Encoder = Encoder.H264,
     val audioEnabled: Boolean = true
 ) {
     enum class Quality(val crf: Int, val label: String) {
