@@ -26,11 +26,12 @@ import dagger.hilt.android.AndroidEntryPoint
  * 应用主界面 Activity，作为 Compose UI 的宿主容器。
  *
  * 内部持有 Activity 作用域的 [com.xuyizhou.videocompressor.ui.viewmodel.CompressViewModel]，
- * 通过 [androidx.navigation.compose.NavHost] 管理以下四个页面路由：
+ * 通过 [androidx.navigation.compose.NavHost] 管理以下五个页面路由：
  * - `home` — 视频选择与参数配置主页（[com.xuyizhou.videocompressor.ui.screen.HomeScreen]）
  * - `progress` — 压缩进度页（[com.xuyizhou.videocompressor.ui.screen.ProgressScreen]）
  * - `result` — 压缩完成结果页（[com.xuyizhou.videocompressor.ui.screen.ResultScreen]）
  * - `error` — 压缩失败错误页（[com.xuyizhou.videocompressor.ui.screen.ErrorScreen]）
+ * - `netdisk_auth` — 百度网盘 OAuth 授权页（[com.xuyizhou.videocompressor.ui.screen.NetdiskAuthScreen]）
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -54,7 +55,16 @@ class MainActivity : ComponentActivity() {
                             viewModel = viewModel,
                             onStartCompress = {
                                 navController.navigate("progress")
+                            },
+                            onOpenAuth = {
+                                navController.navigate("netdisk_auth")
                             }
+                        )
+                    }
+                    composable("netdisk_auth") {
+                        NetdiskAuthScreen(
+                            viewModel = viewModel,
+                            onDone = { navController.popBackStack() }
                         )
                     }
                     composable("progress") {

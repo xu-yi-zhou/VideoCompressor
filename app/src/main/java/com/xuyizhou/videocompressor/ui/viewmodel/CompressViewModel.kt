@@ -15,6 +15,8 @@ import androidx.lifecycle.viewModelScope
 import com.xuyizhou.videocompressor.data.model.CompressConfig
 import com.xuyizhou.videocompressor.data.model.DeviceProfile
 import com.xuyizhou.videocompressor.data.model.VideoInfo
+import com.xuyizhou.videocompressor.data.netdisk.NetdiskAuthStore
+import com.xuyizhou.videocompressor.data.netdisk.NetdiskClient
 import com.xuyizhou.videocompressor.data.repository.VideoRepository
 import com.xuyizhou.videocompressor.domain.compressor.DeviceCodecProfiler
 import com.xuyizhou.videocompressor.domain.compressor.ThermalGovernor
@@ -32,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -52,10 +55,17 @@ class CompressViewModel @Inject constructor(
     private val profiler: DeviceCodecProfiler,
     private val thermalGovernor: ThermalGovernor,
     private val progressBus: CompressProgressBus,
+    private val netdiskStore: NetdiskAuthStore,
+    private val netdiskClient: NetdiskClient,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(CompressUiState())
+    private val _uiState = MutableStateFlow(
+        CompressUiState(
+            autoUpload = netdiskStore.autoUploadEnabled,
+            netdiskName = if (netdiskStore.hasAuth()) netdiskStore.baiduName else null
+        )
+    )
     val uiState: StateFlow<CompressUiState> = _uiState.asStateFlow()
 
     init {
@@ -119,10 +129,39 @@ class CompressViewModel @Inject constructor(
             putStringArrayListExtra("video_uris", ArrayList(videos.map { it.uri.toString() }))
             putStringArrayListExtra("video_names", ArrayList(videos.map { it.name }))
             putExtra("config", configJson)
+            putExtra("auto_upload", _uiState.value.autoUpload)
         }
 
         context.startForegroundService(intent)
         Log.d("CompressVM", "CompressService 已启动")
+    }
+
+    // ── 百度网盘 ──────────────────────────────────────────
+
+    fun setAutoUpload(enabled: Boolean) {
+        netdiskStore.autoUploadEnabled = enabled
+        _uiState.update { it.copy(autoUpload = enabled) }
+    }
+
+    /** 授权页完成/解除授权后同步网盘状态到 UI。 */
+    fun refreshNetdiskAuth() {
+        _uiState.update {
+            it.copy(netdiskName = if (netdiskStore.hasAuth()) netdiskStore.baiduName else null)
+        }
+    }
+
+    /** 授权页回调：授权码换 token（IO），成功后拉取昵称并刷新状态。 */
+    suspend fun completeAuth(code: String): Boolean {
+        val ok = withContext(Dispatchers.IO) { netdiskClient.exchangeCode(code) }
+        if (!ok) return false
+        withContext(Dispatchers.IO) { netdiskClient.getUserInfo() }
+        refreshNetdiskAuth()
+        return true
+    }
+
+    fun clearNetdiskAuth() {
+        netdiskStore.clear()
+        _uiState.update { it.copy(netdiskName = null, autoUpload = false) }
     }
 
     fun onCompressError(message: String) {
@@ -135,7 +174,9 @@ class CompressViewModel @Inject constructor(
         _uiState.update {
             CompressUiState(
                 deviceProfile = it.deviceProfile,
-                thermalLabel = thermalGovernor.currentLevel().label
+                thermalLabel = thermalGovernor.currentLevel().label,
+                autoUpload = it.autoUpload,
+                netdiskName = it.netdiskName
             )
         }
     }
@@ -146,7 +187,9 @@ data class CompressUiState(
     val config: CompressConfig = CompressConfig(),
     val status: CompressStatus = CompressStatus.Idle,
     val deviceProfile: DeviceProfile? = null,
-    val thermalLabel: String = "未知"
+    val thermalLabel: String = "未知",
+    val autoUpload: Boolean = false,
+    val netdiskName: String? = null
 )
 
 sealed class CompressStatus {

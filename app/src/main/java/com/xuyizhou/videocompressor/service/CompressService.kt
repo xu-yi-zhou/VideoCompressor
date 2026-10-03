@@ -16,6 +16,8 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.xuyizhou.videocompressor.data.model.CompressConfig
 import com.xuyizhou.videocompressor.data.model.VideoInfo
+import com.xuyizhou.videocompressor.data.netdisk.NetdiskAuthStore
+import com.xuyizhou.videocompressor.data.netdisk.NetdiskClient
 import com.xuyizhou.videocompressor.domain.usecase.CompressVideoUseCase
 import com.google.gson.Gson
 import dagger.hilt.android.AndroidEntryPoint
@@ -35,12 +37,18 @@ import javax.inject.Inject
  *
  * 进度与结果经 [CompressProgressBus] 回传 ViewModel：
  * 整体进度 = (当前序号 + 单视频进度) / 总数，单项失败不中断后续视频。
+ *
+ * 开启自动上传（Intent extra `auto_upload`）时，每个视频压缩成功后立即
+ * 经 [NetdiskClient] 上传到百度网盘应用目录；单视频进度按压缩段 0~0.9、
+ * 上传段 0.9~1.0 划分，上传失败记为 [BatchResult.uploadError]，不中断后续视频。
  */
 @AndroidEntryPoint
 class CompressService : Service() {
 
     @Inject lateinit var compressUseCase: CompressVideoUseCase
     @Inject lateinit var progressBus: CompressProgressBus
+    @Inject lateinit var netdiskStore: NetdiskAuthStore
+    @Inject lateinit var netdiskClient: NetdiskClient
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val gson = Gson()
@@ -54,6 +62,7 @@ class CompressService : Service() {
         val uriStrings: List<String> = intent?.getStringArrayListExtra("video_uris") ?: emptyList()
         val names: List<String> = intent?.getStringArrayListExtra("video_names") ?: emptyList()
         val configJson: String? = intent?.getStringExtra("config")
+        val autoUpload = intent?.getBooleanExtra("auto_upload", false) ?: false
 
         if (uriStrings.isEmpty() || configJson == null) {
             stopSelf()
@@ -91,23 +100,49 @@ class CompressService : Service() {
                     codec = ""
                 )
 
+                // 单视频进度：压缩段 0~0.9，上传段 0.9~1.0
+                val emitProgress: (Float, Boolean) -> Unit = { itemProgress, uploading ->
+                    val overall = (index + itemProgress.coerceIn(0f, 1f)) / count
+                    getSystemService(NotificationManager::class.java)
+                        .notify(NOTIFICATION_ID, buildNotification(overall, index, count, displayName, uploading))
+                    progressBus.progress(overall, index, count, displayName)
+                }
+
                 val result = compressUseCase(
                     context = this@CompressService,
                     videoInfo = videoInfo,
                     config = config,
                     occurrence = occurrence,
-                    onProgress = { progress ->
-                        val overall = (index + progress.coerceIn(0f, 1f)) / count
-                        getSystemService(NotificationManager::class.java)
-                            .notify(NOTIFICATION_ID, buildNotification(overall, index, count, displayName))
-                        progressBus.progress(overall, index, count, displayName)
-                    }
+                    onProgress = { p -> emitProgress(p * 0.9f, false) }
                 )
 
                 result.fold(
                     onSuccess = { path ->
                         doneCount++
-                        results += BatchResult(index = index, name = displayName, outputUri = path)
+                        var uploadPath: String? = null
+                        var uploadError: String? = null
+                        if (autoUpload) {
+                            emitProgress(0.9f, true)
+                            if (!netdiskStore.hasAuth()) {
+                                uploadError = "网盘未授权"
+                            } else if (!netdiskClient.ensureRemoteDir()) {
+                                uploadError = "创建网盘目录失败"
+                            } else {
+                                netdiskClient.uploadFromUri(Uri.parse(path), outputFileName) { up ->
+                                    emitProgress(0.9f + 0.1f * up, true)
+                                }.fold(
+                                    onSuccess = { uploadPath = it },
+                                    onFailure = { e -> uploadError = e.message ?: "上传失败" }
+                                )
+                            }
+                        }
+                        results += BatchResult(
+                            index = index,
+                            name = displayName,
+                            outputUri = path,
+                            uploadPath = uploadPath,
+                            uploadError = uploadError
+                        )
                     },
                     onFailure = { e ->
                         failedCount++
@@ -126,11 +161,18 @@ class CompressService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun buildNotification(overall: Float, index: Int, count: Int, name: String): Notification {
+    private fun buildNotification(
+        overall: Float,
+        index: Int,
+        count: Int,
+        name: String,
+        uploading: Boolean = false
+    ): Notification {
         val pct = (overall * 100).toInt()
+        val phase = if (uploading) " · 上传中" else ""
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("视频压缩中（第 ${index + 1}/$count 个）")
-            .setContentText("$name · $pct%")
+            .setContentText("$name · $pct%$phase")
             .setSmallIcon(android.R.drawable.ic_menu_slideshow)
             .setProgress(100, pct, false)
             .setOngoing(true)

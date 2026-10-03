@@ -15,6 +15,9 @@
     <!-- 防止息屏休眠 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- 压缩成品上传到百度网盘 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- 前台服务权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />

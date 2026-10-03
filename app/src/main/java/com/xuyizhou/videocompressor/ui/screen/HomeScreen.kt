@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Movie
@@ -36,13 +37,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xuyizhou.videocompressor.data.model.CompressConfig
+import com.xuyizhou.videocompressor.data.netdisk.NetdiskConfig
 import com.xuyizhou.videocompressor.ui.viewmodel.CompressViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: CompressViewModel,
-    onStartCompress: () -> Unit
+    onStartCompress: () -> Unit,
+    onOpenAuth: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -103,7 +106,7 @@ fun HomeScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                CompressTab(uiState, viewModel, onStartCompress)
+                CompressTab(uiState, viewModel, onStartCompress, onOpenAuth)
             }
         }
     }
@@ -113,11 +116,23 @@ fun HomeScreen(
 private fun CompressTab(
     uiState: com.xuyizhou.videocompressor.ui.viewmodel.CompressUiState,
     viewModel: CompressViewModel,
-    onStartCompress: () -> Unit
+    onStartCompress: () -> Unit,
+    onOpenAuth: () -> Unit
 ) {
     CompressSettingsCard(
         config = uiState.config,
         onConfigChange = { viewModel.updateConfig(it) }
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    NetdiskCard(
+        authorized = uiState.netdiskName != null,
+        baiduName = uiState.netdiskName,
+        autoUpload = uiState.autoUpload,
+        onToggleUpload = { viewModel.setAutoUpload(it) },
+        onOpenAuth = onOpenAuth,
+        onClearAuth = { viewModel.clearNetdiskAuth() }
     )
 
     Spacer(modifier = Modifier.height(16.dp))
@@ -142,6 +157,58 @@ private fun CompressTab(
     }
 
     Spacer(modifier = Modifier.height(16.dp))
+}
+
+@Composable
+private fun NetdiskCard(
+    authorized: Boolean,
+    baiduName: String?,
+    autoUpload: Boolean,
+    onToggleUpload: (Boolean) -> Unit,
+    onOpenAuth: () -> Unit,
+    onClearAuth: () -> Unit
+) {
+    SectionCard(title = "百度网盘", icon = Icons.Outlined.CloudUpload) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (authorized) "已授权：${baiduName ?: "百度账号"}" else "未授权",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "压缩完成后自动上传到应用目录「${NetdiskConfig.REMOTE_DIR}」",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            if (authorized) {
+                TextButton(onClick = onClearAuth) { Text("解除授权") }
+            } else {
+                Button(onClick = onOpenAuth, shape = RoundedCornerShape(12.dp)) { Text("去授权") }
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("压缩后自动上传", style = MaterialTheme.typography.bodyMedium)
+                if (!authorized) {
+                    Text(
+                        "需先授权百度网盘",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Switch(
+                checked = autoUpload && authorized,
+                onCheckedChange = onToggleUpload,
+                enabled = authorized
+            )
+        }
+    }
 }
 
 @Composable

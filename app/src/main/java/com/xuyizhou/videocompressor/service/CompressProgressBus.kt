@@ -53,11 +53,17 @@ class CompressProgressBus @Inject constructor() {
     fun reset() { _events.value = Event.Idle }
 }
 
-/** 单个视频的压缩结果。[outputUri] 与 [error] 互斥；[inputSize] 由 ViewModel 按 [index] 补全。 */
+/**
+ * 单个视频的压缩结果。[outputUri] 与 [error] 互斥；[inputSize] 由 ViewModel 按 [index] 补全。
+ * [uploadPath] 非空表示已上传到百度网盘（远端路径）；[uploadError] 非空表示上传失败；
+ * 两者均为空表示未开启自动上传。
+ */
 data class BatchResult(
     val index: Int,
     val name: String,
     val outputUri: String? = null,
     val error: String? = null,
-    val inputSize: Long = 0L
+    val inputSize: Long = 0L,
+    val uploadPath: String? = null,
+    val uploadError: String? = null
 )

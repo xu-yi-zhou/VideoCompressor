@@ -174,7 +174,12 @@ private fun ResultItemCard(result: BatchResult, outputSize: Long) {
                         val saved = if (result.inputSize > 0 && outputSize > 0) {
                             ((1 - outputSize.toDouble() / result.inputSize) * 100).toInt().coerceAtLeast(0)
                         } else null
-                        if (saved != null) "已保存至相册 · 节省 $saved%" else "已保存至相册"
+                        val base = if (saved != null) "已保存至相册 · 节省 $saved%" else "已保存至相册"
+                        when {
+                            result.uploadPath != null -> "$base · 网盘已上传"
+                            result.uploadError != null -> "$base · 网盘上传失败：${result.uploadError}"
+                            else -> base
+                        }
                     } else {
                         result.error ?: "压缩失败"
                     },
